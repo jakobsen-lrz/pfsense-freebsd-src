@@ -10010,7 +10010,13 @@ pf_setup_pdesc(sa_family_t af, int dir, struct pf_pdesc *pd, struct mbuf **m0,
 		}
 
 		h = mtod(pd->m, struct ip6_hdr *);
-		pd->off = 0;
+		if (pd->m->m_pkthdr.len <
+		    sizeof(struct ip6_hdr) + ntohs(h->ip6_plen)) {
+			*action = PF_DROP;
+			REASON_SET(reason, PFRES_SHORT);
+			return (-1);
+		}
+
 		if (pf_walk_header6(pd, h, reason) != PF_PASS) {
 			*action = PF_DROP;
 			return (-1);
