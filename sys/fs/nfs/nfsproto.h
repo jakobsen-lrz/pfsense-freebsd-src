@@ -275,8 +275,6 @@
 #define	NFSX_V4SESSIONID	16
 #define	NFSX_V4DEVICEID		16
 #define	NFSX_V4PNFSFH		(sizeof(fhandle_t) + 1)
-#define	NFSX_V4NAMEDDIRFH	2
-#define	NFSX_V4NAMEDATTRFH	3
 #define	NFSX_V4FILELAYOUT	(4 * NFSX_UNSIGNED + NFSX_V4DEVICEID +	\
 				 NFSX_HYPER + NFSM_RNDUP(NFSX_V4PNFSFH))
 #define	NFSX_V4FLEXLAYOUT(m)	(NFSX_HYPER + 3 * NFSX_UNSIGNED +		\
@@ -408,16 +406,10 @@
 /* Do an NFSv4 Verify+Write. */
 #define	NFSPROC_APPENDWRITE	69
 
-/* Do a NFSv4 Openattr. */
-#define	NFSPROC_OPENATTR	70
-
-/* Do a NFSv4.2 Clone. */
-#define	NFSPROC_CLONE		71
-
 /*
  * Must be defined as one higher than the last NFSv4.2 Proc# above.
  */
-#define	NFSV42_NPROCS		72
+#define	NFSV42_NPROCS		70
 
 /* Value of NFSV42_NPROCS for old nfsstats structure. (Always 69) */
 #define	NFSV42_OLDNPROCS	69
@@ -1427,7 +1419,6 @@ struct nfsv3_sattr {
  * NFSGETATTRBIT_PATHCONF0 - bits 0<->31
  */
 #define	NFSGETATTRBIT_PATHCONF0	(NFSATTRBIT_GETATTR0 |			\
-				NFSATTRBM_NAMEDATTR |			\
 			 	NFSATTRBM_CASEINSENSITIVE |		\
 			 	NFSATTRBM_CASEPRESERVING |		\
 			 	NFSATTRBM_CHOWNRESTRICTED |		\

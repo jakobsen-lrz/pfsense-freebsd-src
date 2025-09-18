@@ -35,17 +35,11 @@
 
 typedef int (*undef_handler_t)(vm_offset_t, uint32_t, struct trapframe *,
     uint32_t);
-typedef bool (*undef_sys_handler_t)(uint64_t, struct trapframe *);
 
 void undef_init(void);
-void install_sys_handler(undef_sys_handler_t);
-void *install_undef_handler(undef_handler_t);
-#ifdef COMPAT_FREEBSD32
-void *install_undef32_handler(undef_handler_t);
-#endif
+void *install_undef_handler(bool, undef_handler_t);
 void remove_undef_handler(void *);
-bool undef_sys(uint64_t, struct trapframe *);
-int undef_insn(struct trapframe *);
+int undef_insn(u_int, struct trapframe *);
 
 #endif /* _KERNEL */
 

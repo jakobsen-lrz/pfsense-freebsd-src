@@ -202,6 +202,7 @@ static int
 gpio_aei_attach(device_t dev)
 {
 	struct gpio_aei_softc * sc = device_get_softc(dev);
+	gpio_pin_t pin;
 	ACPI_HANDLE handle;
 	ACPI_STATUS status;
 
@@ -209,21 +210,43 @@ gpio_aei_attach(device_t dev)
 	device_set_desc(dev, "ACPI Event Information Device");
 
 	handle = acpi_gpiobus_get_handle(dev);
-	status = AcpiGetParent(handle, &sc->dev_handle);
-	if (ACPI_FAILURE(status)) {
-		device_printf(dev, "Cannot get parent of %s\n",
-		    acpi_name(handle));
+	if (gpio_pin_get_by_acpi_index(dev, 0, &pin) != 0) {
+		device_printf(dev, "Unable to get the input pin\n");
 		return (ENXIO);
 	}
 
-	SLIST_INIT(&sc->aei_ctx);
-	sc->dev = dev;
+	sc->type = ACPI_AEI_TYPE_UNKNOWN;
+	sc->pin = pin->pin;
+	if (pin->pin <= 255) {
+		char objname[5];	/* "_EXX" or "_LXX" */
+		sprintf(objname, "_%c%02X",
+		    (pin->flags & GPIO_INTR_EDGE_MASK) ? 'E' : 'L', pin->pin);
+		if (ACPI_SUCCESS(AcpiGetHandle(handle, objname, &sc->handle)))
+			sc->type = ACPI_AEI_TYPE_ELX;
+	}
+	if (sc->type == ACPI_AEI_TYPE_UNKNOWN) {
+		if (ACPI_SUCCESS(AcpiGetHandle(handle, "_EVT", &sc->handle)))
+			sc->type = ACPI_AEI_TYPE_EVT;
+	}
 
-	status = AcpiWalkResources(sc->dev_handle, "_AEI",
-	    gpio_aei_enumerate, sc);
-	if (ACPI_FAILURE(status)) {
-		device_printf(dev, "Failed to enumerate AEI resources\n");
-		return (ENXIO);
+	if (sc->type == ACPI_AEI_TYPE_UNKNOWN) {
+		device_printf(dev, "ACPI Event Information Device type is unknown");
+		return (ENOTSUP);
+	}
+
+	/* Set up the interrupt. */
+	if ((sc->intr_res = gpio_alloc_intr_resource(dev, &sc->intr_rid,
+	    RF_ACTIVE, pin, pin->flags & GPIO_INTR_MASK)) == NULL) {
+		device_printf(dev, "Cannot allocate an IRQ\n");
+		return (ENOTSUP);
+	}
+	err = bus_setup_intr(dev, sc->intr_res, INTR_TYPE_MISC | INTR_MPSAFE,
+	    NULL, gpio_aei_intr, sc, &sc->intr_cookie);
+	if (err != 0) {
+		device_printf(dev, "Cannot set up IRQ\n");
+		bus_release_resource(dev, SYS_RES_IRQ, sc->intr_rid,
+		    sc->intr_res);
+		return (err);
 	}
 
 	return (0);

@@ -1436,8 +1436,8 @@ fuse_vnop_lookup(struct vop_lookup_args *ap)
 	struct timespec now;
 
 	int nameiop = cnp->cn_nameiop;
-	bool isdotdot = cnp->cn_flags & ISDOTDOT;
-	bool islastcn = cnp->cn_flags & ISLASTCN;
+	int flags = cnp->cn_flags;
+	int islastcn = flags & ISLASTCN;
 	struct mount *mp = vnode_mount(dvp);
 	struct fuse_data *data = fuse_get_mpdata(mp);
 	int default_permissions = data->dataflags & FSESS_DEFAULT_PERMISSIONS;
@@ -1471,7 +1471,8 @@ fuse_vnop_lookup(struct vop_lookup_args *ap)
 		return err;
 
 	is_dot = cnp->cn_namelen == 1 && *(cnp->cn_nameptr) == '.';
-	if (isdotdot && !(data->dataflags & FSESS_EXPORT_SUPPORT)) {
+	if ((flags & ISDOTDOT) && !(data->dataflags & FSESS_EXPORT_SUPPORT))
+	{
 		if (!(VTOFUD(dvp)->flag & FN_PARENT_NID)) {
 			/*
 			 * Since the file system doesn't support ".." lookups,
@@ -1586,7 +1587,7 @@ fuse_vnop_lookup(struct vop_lookup_args *ap)
 		}
 	} else {
 		/* Entry was found */
-		if (isdotdot) {
+		if (flags & ISDOTDOT) {
 			struct fuse_lookup_alloc_arg flaa;
 
 			flaa.nid = nid;
@@ -2727,7 +2728,6 @@ fuse_vnop_setextattr(struct vop_setextattr_args *ap)
 	struct mount *mp = vnode_mount(vp);
 	struct thread *td = ap->a_td;
 	struct ucred *cred = ap->a_cred;
-	size_t struct_size = FUSE_COMPAT_SETXATTR_IN_SIZE;
 	char *prefix;
 	size_t len;
 	char *attr_str;
@@ -2772,26 +2772,17 @@ fuse_vnop_setextattr(struct vop_setextattr_args *ap)
 	len = strlen(prefix) + sizeof(extattr_namespace_separator) +
 	    strlen(ap->a_name) + 1;
 
-	/* older FUSE servers  use a smaller fuse_setxattr_in struct*/
-	if (fuse_libabi_geq(fuse_get_mpdata(mp), 7, 33))
-		struct_size = sizeof(*set_xattr_in);
-
-	fdisp_init(&fdi, len + struct_size + uio->uio_resid);
+	fdisp_init(&fdi, len + sizeof(*set_xattr_in) + uio->uio_resid);
 	fdisp_make_vp(&fdi, FUSE_SETXATTR, vp, td, cred);
 
 	set_xattr_in = fdi.indata;
 	set_xattr_in->size = uio->uio_resid;
 
-	if (fuse_libabi_geq(fuse_get_mpdata(mp), 7, 33)) {
-		set_xattr_in->setxattr_flags = 0;
-		set_xattr_in->padding = 0;
-	}
-
-	attr_str = (char *)fdi.indata + struct_size;
+	attr_str = (char *)fdi.indata + sizeof(*set_xattr_in);
 	snprintf(attr_str, len, "%s%c%s", prefix, extattr_namespace_separator,
 	    ap->a_name);
 
-	err = uiomove((char *)fdi.indata + struct_size + len,
+	err = uiomove((char *)fdi.indata + sizeof(*set_xattr_in) + len,
 	    uio->uio_resid, uio);
 	if (err != 0) {
 		goto out;

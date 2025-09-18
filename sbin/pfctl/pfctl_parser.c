@@ -1243,31 +1243,23 @@ print_rule(struct pfctl_rule *r, const char *anchor_call, int verbose, int numer
 		}
 #endif
 	}
-	if (anchor_call[0])
-		return;
-	if (r->action == PF_NAT || r->action == PF_BINAT || r->action == PF_RDR) {
-		printf(" -> ");
-		print_pool(&r->rdr, r->rdr.proxy_port[0],
-		    r->rdr.proxy_port[1], r->action);
-	} else {
-		if (!TAILQ_EMPTY(&r->nat.list)) {
-			if (r->rule_flag & PFRULE_AFTO) {
-				printf(" af-to %s from ", r->naf == AF_INET ? "inet" : (r->naf == AF_INET6 ? "inet6" : "? "));
-			} else {
-				printf(" nat-to ");
-			}
-			print_pool(&r->nat, r->nat.proxy_port[0],
-			    r->nat.proxy_port[1], PF_NAT);
-		}
+	if (!anchor_call[0] && ! TAILQ_EMPTY(&r->nat.list) &&
+	    r->rule_flag & PFRULE_AFTO) {
+		printf(" af-to %s from ", r->naf == AF_INET ? "inet" : "inet6");
+		print_pool(&r->nat, r->nat.proxy_port[0], r->nat.proxy_port[1],
+		    r->naf ? r->naf : r->af, PF_NAT);
 		if (!TAILQ_EMPTY(&r->rdr.list)) {
-			if (r->rule_flag & PFRULE_AFTO) {
-				printf(" to ");
-			} else {
-				printf(" rdr-to ");
-			}
+			printf(" to ");
 			print_pool(&r->rdr, r->rdr.proxy_port[0],
 			    r->rdr.proxy_port[1], PF_RDR);
 		}
+	}
+	if (!anchor_call[0] &&
+	    (r->action == PF_NAT || r->action == PF_BINAT ||
+		r->action == PF_RDR)) {
+		printf(" -> ");
+		print_pool(&r->rdr, r->rdr.proxy_port[0],
+		    r->rdr.proxy_port[1], r->af, r->action);
 	}
 }
 
@@ -1703,8 +1695,6 @@ ifa_lookup(char *ifa_name, int flags)
 			continue;
 		if ((flags & PFI_AFLAG_BROADCAST) &&
 		    !(p->ifa_flags & IFF_BROADCAST))
-			continue;
-		if ((flags & PFI_AFLAG_BROADCAST) && p->bcast.v4.s_addr == 0)
 			continue;
 		if ((flags & PFI_AFLAG_PEER) &&
 		    !(p->ifa_flags & IFF_POINTOPOINT))

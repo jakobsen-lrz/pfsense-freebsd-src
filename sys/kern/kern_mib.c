@@ -729,9 +729,11 @@ SYSCTL_STRING(_user, USER_LOCALBASE, localbase, CTLFLAG_RWTUN,
     localbase, sizeof(localbase), "Prefix used to install and locate add-on packages");
 
 #include <sys/vnode.h>
-SYSCTL_SIZEOF_STRUCT(vnode);
+SYSCTL_INT(_debug_sizeof, OID_AUTO, vnode, CTLFLAG_RD,
+    SYSCTL_NULL_INT_PTR, sizeof(struct vnode), "sizeof(struct vnode)");
 
-SYSCTL_SIZEOF_STRUCT(proc);
+SYSCTL_INT(_debug_sizeof, OID_AUTO, proc, CTLFLAG_RD,
+    SYSCTL_NULL_INT_PTR, sizeof(struct proc), "sizeof(struct proc)");
 
 static int
 sysctl_kern_pid_max(SYSCTL_HANDLER_ARGS)
@@ -767,15 +769,19 @@ SYSCTL_INT(_kern, OID_AUTO, pid_max_limit, CTLFLAG_RD,
 
 #include <sys/bio.h>
 #include <sys/buf.h>
-SYSCTL_SIZEOF_STRUCT(bio);
-SYSCTL_SIZEOF_STRUCT(buf);
+SYSCTL_INT(_debug_sizeof, OID_AUTO, bio, CTLFLAG_RD,
+    SYSCTL_NULL_INT_PTR, sizeof(struct bio), "sizeof(struct bio)");
+SYSCTL_INT(_debug_sizeof, OID_AUTO, buf, CTLFLAG_RD,
+    SYSCTL_NULL_INT_PTR, sizeof(struct buf), "sizeof(struct buf)");
 
 #include <sys/user.h>
-SYSCTL_SIZEOF_STRUCT(kinfo_proc);
+SYSCTL_INT(_debug_sizeof, OID_AUTO, kinfo_proc, CTLFLAG_RD,
+    SYSCTL_NULL_INT_PTR, sizeof(struct kinfo_proc), "sizeof(struct kinfo_proc)");
 
 /* Used by kernel debuggers. */
 const int pcb_size = sizeof(struct pcb);
-SYSCTL_SIZEOF_STRUCT(pcb);
+SYSCTL_INT(_debug_sizeof, OID_AUTO, pcb, CTLFLAG_RD,
+    SYSCTL_NULL_INT_PTR, sizeof(struct pcb), "sizeof(struct pcb)");
 
 /* XXX compatibility, remove for 6.0 */
 #include <sys/imgact.h>

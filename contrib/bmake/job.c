@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.519 2025/08/04 15:40:39 sjg Exp $	*/
+/*	$NetBSD: job.c,v 1.489 2025/03/08 20:15:03 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -137,104 +137,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.519 2025/08/04 15:40:39 sjg Exp $");
-
-
-#ifdef USE_SELECT
-/*
- * Emulate poll() in terms of select().  This is not a complete
- * emulation but it is sufficient for make's purposes.
- */
-
-#define poll emul_poll
-#define pollfd emul_pollfd
-
-struct emul_pollfd {
-	int fd;
-	short events;
-	short revents;
-};
-
-#define POLLIN		0x0001
-#define POLLOUT		0x0004
-
-int emul_poll(struct pollfd *, int, int);
-#endif
-
-struct pollfd;
-
-
-enum JobStatus {
-	JOB_ST_FREE,		/* Job is available */
-	JOB_ST_SET_UP,		/* Job is allocated but otherwise invalid */
-	JOB_ST_RUNNING,		/* Job is running, pid valid */
-	JOB_ST_FINISHED		/* Job is done (i.e. after SIGCHLD) */
-};
-
-static const char JobStatus_Name[][9] = {
-	"free",
-	"set-up",
-	"running",
-	"finished",
-};
-
-/*
- * A Job manages the shell commands that are run to create a single target.
- * Each job is run in a separate subprocess by a shell.  Several jobs can run
- * in parallel.
- *
- * The shell commands for the target are written to a temporary file,
- * then the shell is run with the temporary file as stdin, and the output
- * of that shell is captured via a pipe.
- *
- * When a job is finished, Make_Update updates all parents of the node
- * that was just remade, marking them as ready to be made next if all
- * other dependencies are finished as well.
- */
-struct Job {
-	/* The process ID of the shell running the commands */
-	int pid;
-
-	/* The target the child is making */
-	GNode *node;
-
-	/*
-	 * If one of the shell commands is "...", all following commands are
-	 * delayed until the .END node is made.  This list node points to the
-	 * first of these commands, if any.
-	 */
-	StringListNode *tailCmds;
-
-	/* This is where the shell commands go. */
-	FILE *cmdFILE;
-
-	int exit_status;	/* from wait4() in signal handler */
-
-	enum JobStatus status;
-
-	bool suspended;
-
-	/* Ignore non-zero exits */
-	bool ignerr;
-	/* Output the command before or instead of running it. */
-	bool echo;
-	/* Target is a special one. */
-	bool special;
-
-	int inPipe;		/* Pipe for reading output from job */
-	int outPipe;		/* Pipe for writing control commands */
-	struct pollfd *inPollfd; /* pollfd associated with inPipe */
-
-#define JOB_BUFSIZE	1024
-	/* Buffer for storing the output of the job, line by line. */
-	char outBuf[JOB_BUFSIZE + 1];
-	size_t outBufLen;
-
-#ifdef USE_META
-	struct BuildMon bm;
-#endif
-};
-
+MAKE_RCSID("$NetBSD: job.c,v 1.489 2025/03/08 20:15:03 rillig Exp $");
 
 /*
  * A shell defines how the commands are run.  All commands for a target are
@@ -512,7 +415,7 @@ static char *shell_freeIt = NULL; /* Allocated memory for custom .SHELL */
 
 static Job *job_table;		/* The structures that describe them */
 static Job *job_table_end;	/* job_table + maxJobs */
-static bool wantToken;
+static unsigned int wantToken;
 static bool lurking_children = false;
 static bool make_suspended = false; /* Whether we've seen a SIGTSTP (etc) */
 
@@ -525,6 +428,7 @@ static Job **jobByFdIndex = NULL;
 static nfds_t fdsLen = 0;
 static void watchfd(Job *);
 static void clearfd(Job *);
+static bool readyfd(Job *);
 
 static char *targPrefix = NULL;	/* To identify a job change in the output. */
 
@@ -1333,7 +1237,11 @@ JobFinish (Job *job, WAIT_T status)
 		TokenPool_Return();
 
 	if (aborting == ABORT_ERROR && jobTokensRunning == 0) {
-		if (shouldDieQuietly(NULL, -1))
+		if (shouldDieQuietly(NULL, -1)) {
+			/*
+			 * TODO: better clean up properly, to avoid killing
+			 *  child processes by SIGPIPE.
+			 */
 			exit(2);
 		Fatal("%d error%s", job_errors, job_errors == 1 ? "" : "s");
 	}
@@ -1466,7 +1374,7 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 	if (gn->flags.fromDepend) {
 		if (!Job_RunTarget(".STALE", gn->fname))
 			fprintf(stdout,
-			    "%s: %s:%u: ignoring stale %s for %s\n",
+			    "%s: %s, %u: ignoring stale %s for %s\n",
 			    progname, gn->fname, gn->lineno, makeDependfile,
 			    gn->name);
 		return true;
@@ -2016,17 +1924,17 @@ Job_CatchOutput(void)
 
 	(void)fflush(stdout);
 
+	/* Skip the first fd in the list, as it is the job token pipe. */
 	do {
-		/* Maybe skip the job token pipe. */
-		nfds_t skip = wantToken ? 0 : 1;
-		nready = poll(fds + skip, fdsLen - skip, -1);
+		nready = poll(fds + 1 - wantToken, fdsLen - 1 + wantToken,
+		    POLL_MSEC);
 	} while (nready < 0 && errno == EINTR);
 
 	if (nready < 0)
 		Punt("poll: %s", strerror(errno));
 
-	if (nready > 0 && childExitJob.inPollfd->revents & POLLIN) {
-		char token;
+	if (nready > 0 && readyfd(&childExitJob)) {
+		char token = 0;
 		ssize_t count = read(childExitJob.inPipe, &token, 1);
 		if (count != 1)
 			Punt("childExitJob.read: %s",
@@ -2144,7 +2052,7 @@ Job_Init(void)
 	job_table = bmake_malloc((size_t)opts.maxJobs * sizeof *job_table);
 	memset(job_table, 0, (size_t)opts.maxJobs * sizeof *job_table);
 	job_table_end = job_table + opts.maxJobs;
-	wantToken = false;
+	wantToken = 0;
 	caught_sigchld = 0;
 
 	aborting = ABORT_NONE;
@@ -2585,6 +2493,39 @@ clearfd(Job *job)
 	job->inPollfd = NULL;
 }
 
+static bool
+readyfd(Job *job)
+{
+	if (job->inPollfd == NULL)
+		Punt("Polling unwatched job");
+	return (job->inPollfd->revents & POLLIN) != 0;
+}
+
+/*
+ * Put a token (back) into the job pipe.
+ * This allows a make process to start a build job.
+ */
+static void
+JobTokenAdd(void)
+{
+	char tok = JOB_TOKENS[aborting], tok1;
+
+	if (!Job_error_token && aborting == ABORT_ERROR) {
+		if (jobTokensRunning == 0)
+			return;
+		tok = '+';		/* no error token */
+	}
+
+	/* If we are depositing an error token, flush everything else. */
+	while (tok != '+' && read(tokenWaitJob.inPipe, &tok1, 1) == 1)
+		continue;
+
+	DEBUG3(JOB, "(%d) aborting %d, deposit token %c\n",
+	    getpid(), aborting, tok);
+	while (write(tokenWaitJob.outPipe, &tok, 1) == -1 && errno == EAGAIN)
+		continue;
+}
+
 int
 Job_TempFile(const char *pattern, char *tfile, size_t tfile_sz)
 {
@@ -2704,9 +2645,9 @@ TokenPool_Take(void)
 	char tok, tok1;
 	ssize_t count;
 
-	wantToken = false;
-	DEBUG3(JOB, "TokenPool_Take: pid %d, aborting %s, running %d\n",
-	    getpid(), aborting_name[aborting], jobTokensRunning);
+	wantToken = 0;
+	DEBUG3(JOB, "Job_TokenWithdraw(%d): aborting %d, running %d\n",
+	    getpid(), aborting, jobTokensRunning);
 
 	if (aborting != ABORT_NONE || jobTokensRunning >= opts.maxJobs)
 		return false;
@@ -2717,9 +2658,8 @@ TokenPool_Take(void)
 	if (count < 0 && jobTokensRunning != 0) {
 		if (errno != EAGAIN)
 			Fatal("job pipe read: %s", strerror(errno));
-		DEBUG1(JOB, "TokenPool_Take: pid %d blocked for token\n",
-		    getpid());
-		wantToken = true;
+		DEBUG1(JOB, "(%d) blocked for token\n", getpid());
+		wantToken = 1;
 		return false;
 	}
 

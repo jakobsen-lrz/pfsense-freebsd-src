@@ -439,7 +439,6 @@ fdt_foreach_reserved_region(fdt_mem_region_cb cb, void *arg)
 	reservep = (pcell_t *)&reserve;
 	for (i = 0; i < tuples; i++) {
 
-		memset(&mr, 0, sizeof(mr));
 		rv = fdt_data_to_res(reservep, addr_cells, size_cells,
 			(u_long *)&mr.mr_start, (u_long *)&mr.mr_size);
 
@@ -483,7 +482,6 @@ fdt_foreach_reserved_mem(fdt_mem_region_cb cb, void *arg)
 			/* XXX: Does a no-map of a dynamic range make sense? */
 			continue;
 
-		memset(&mr, 0, sizeof(mr));
 		fdt_data_to_res(reg, addr_cells, size_cells,
 		    (u_long *)&mr.mr_start, (u_long *)&mr.mr_size);
 
@@ -526,7 +524,6 @@ fdt_foreach_mem_region(fdt_mem_region_cb cb, void *arg)
 	regp = (pcell_t *)&reg;
 	for (i = 0; i < tuples; i++) {
 
-		memset(&mr, 0, sizeof(mr));
 		rv = fdt_data_to_res(regp, addr_cells, size_cells,
 			(u_long *)&mr.mr_start, (u_long *)&mr.mr_size);
 

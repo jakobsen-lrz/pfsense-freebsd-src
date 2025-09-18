@@ -4,7 +4,7 @@
  * All rights reserved.
  *
  * Copyright (c) 2016-2019 Netflix, Inc. written by M. Warner Losh
- *
+ * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -71,17 +71,7 @@
 
 #include "loader_efi.h"
 
-struct arch_switch archsw = {	/* MI/MD interface boundary */
-	.arch_autoload = efi_autoload,
-	.arch_getdev = efi_getdev,
-	.arch_copyin = efi_copyin,
-	.arch_copyout = efi_copyout,
-#if defined(__amd64__) || defined(__i386__)
-	.arch_hypervisor = x86_hypervisor,
-#endif
-	.arch_readin = efi_readin,
-	.arch_zfs_probe = efi_zfs_probe,
-};
+struct arch_switch archsw;	/* MI/MD interface boundary */
 
 EFI_GUID acpi = ACPI_TABLE_GUID;
 EFI_GUID acpi20 = ACPI_20_TABLE_GUID;
@@ -523,7 +513,7 @@ find_currdev(bool do_bootmgr, bool is_last,
 	 * it's wrong.
 	 */
 	rootdev = getenv("rootdev");
-	if (rootdev != NULL && *rootdev != '\0') {
+	if (rootdev != NULL) {
 		printf("    Setting currdev to configured rootdev %s\n",
 		    rootdev);
 		set_currdev(rootdev);
@@ -1211,6 +1201,16 @@ main(int argc, CHAR16 *argv[])
 	char boot_info[4096];
 	char buf[32];
 	bool uefi_boot_mgr;
+
+	archsw.arch_autoload = efi_autoload;
+	archsw.arch_getdev = efi_getdev;
+	archsw.arch_copyin = efi_copyin;
+	archsw.arch_copyout = efi_copyout;
+#if defined(__amd64__) || defined(__i386__)
+	archsw.arch_hypervisor = x86_hypervisor;
+#endif
+	archsw.arch_readin = efi_readin;
+	archsw.arch_zfs_probe = efi_zfs_probe;
 
 #if !defined(__arm__)
 	efi_smbios_detect();

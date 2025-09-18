@@ -21,6 +21,7 @@ ATF_TESTS_SH+=	altq \
 		loginterface \
 		killstate \
 		macro \
+		map_e \
 		match \
 		max_pkt_rate \
 		max_pkt_size \
@@ -65,7 +66,6 @@ ATF_TESTS_PYTEST+=	nat64.py
 ATF_TESTS_PYTEST+=	nat66.py
 ATF_TESTS_PYTEST+=	return.py
 ATF_TESTS_PYTEST+=	sctp.py
-ATF_TESTS_PYTEST+=	tcp.py
 
 # Allow tests to run in parallel in their own jails
 TEST_METADATA+= execenv="jail"

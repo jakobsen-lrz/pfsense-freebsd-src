@@ -689,11 +689,11 @@ struct splice {
 
 #endif /* __BSD_VISIBLE */
 
-#ifndef	_KERNEL
-
 #if defined(_FORTIFY_SOURCE) && _FORTIFY_SOURCE > 0
 #include <ssp/socket.h>
 #endif
+
+#ifndef	_KERNEL
 
 #include <sys/cdefs.h>
 

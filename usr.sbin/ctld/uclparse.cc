@@ -111,15 +111,15 @@ uclparse_chap_mutual(const char *ag_name, const ucl::Ucl &obj)
 		return (false);
 	}
 
-	auto mutual_user = obj["mutual-user"];
-	if (!mutual_user || mutual_user.type() != UCL_STRING) {
+	mutual_user = ucl_object_find_key(obj, "mutual-user");
+	if (!user || user->type != UCL_STRING) {
 		log_warnx("chap-mutual section in auth-group \"%s\" is missing "
 		    "\"mutual-user\" string key", ag_name);
 		return (false);
 	}
 
-	auto mutual_secret = obj["mutual-secret"];
-	if (!mutual_secret || mutual_secret.type() != UCL_STRING) {
+	mutual_secret = ucl_object_find_key(obj, "mutual-secret");
+	if (!secret || secret->type != UCL_STRING) {
 		log_warnx("chap-mutual section in auth-group \"%s\" is missing "
 		    "\"mutual-secret\" string key", ag_name);
 		return (false);
@@ -171,15 +171,15 @@ uclparse_target_chap_mutual(const char *t_name, const ucl::Ucl &obj)
 		return (false);
 	}
 
-	auto mutual_user = obj["mutual-user"];
-	if (!mutual_user || mutual_user.type() != UCL_STRING) {
+	mutual_user = ucl_object_find_key(obj, "mutual-user");
+	if (!user || user->type != UCL_STRING) {
 		log_warnx("chap-mutual section in target \"%s\" is missing "
 		    "\"mutual-user\" string key", t_name);
 		return (false);
 	}
 
-	auto mutual_secret = obj["mutual-secret"];
-	if (!mutual_secret || mutual_secret.type() != UCL_STRING) {
+	mutual_secret = ucl_object_find_key(obj, "mutual-secret");
+	if (!secret || secret->type != UCL_STRING) {
 		log_warnx("chap-mutual section in target \"%s\" is missing "
 		    "\"mutual-secret\" string key", t_name);
 		return (false);
@@ -693,8 +693,11 @@ uclparse_dscp(const char *group_type, const char *pg_name,
 	if (obj.type() == UCL_INT)
 		return (portal_group_set_dscp(obj.int_value()));
 
-	std::string key = obj.key();
-	if (key == "be" || key == "cs0")
+	key = ucl_object_tostring(obj);
+	if (strcmp(key, "0x") == 0)
+		return (portal_group_set_dscp(strtol(key + 2, NULL, 16)));
+
+	if (strcmp(key, "be") == 0 || strcmp(key, "cs0") == 0)
 		portal_group_set_dscp(IPTOS_DSCP_CS0 >> 2);
 	else if (key == "ef")
 		portal_group_set_dscp(IPTOS_DSCP_EF >> 2);

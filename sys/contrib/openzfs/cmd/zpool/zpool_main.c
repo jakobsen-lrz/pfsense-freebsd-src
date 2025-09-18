@@ -12830,13 +12830,11 @@ found:
 
 			if (strcmp(argv[1], "root") == 0)
 				vdev = strdup("root-0");
+			else
+				vdev = strdup(argv[1]);
 
 			/* ... and the rest are vdev names */
-			if (vdev == NULL)
-				cb.cb_vdevs.cb_names = argv + 1;
-			else
-				cb.cb_vdevs.cb_names = &vdev;
-
+			cb.cb_vdevs.cb_names = &vdev;
 			cb.cb_vdevs.cb_names_count = argc - 1;
 			cb.cb_type = ZFS_TYPE_VDEV;
 			argc = 1; /* One pool to process */

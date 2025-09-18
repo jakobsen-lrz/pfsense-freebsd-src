@@ -471,6 +471,11 @@ allocate_initial_tls(Obj_Entry *objs)
 void *
 __tls_get_addr(tls_index* ti)
 {
-	return (tls_get_addr_common(_tcb_get(), ti->ti_module, ti->ti_offset +
-	    TLS_DTV_OFFSET));
+	uintptr_t **dtvp;
+	void *p;
+
+	dtvp = &_tcb_get()->tcb_dtv;
+	p = tls_get_addr_common(dtvp, ti->ti_module, ti->ti_offset);
+
+	return ((char*)p + TLS_DTV_OFFSET);
 }

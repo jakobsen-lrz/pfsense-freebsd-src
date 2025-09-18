@@ -17,7 +17,6 @@ CFLAGS+=	-I${SRCTOP}/lib/libutil++
 CFLAGS+=	-I${SRCTOP}/lib/libnvmf
 #CFLAGS+=	-DICL_KERNEL_PROXY
 NO_WCAST_ALIGN=
-CXXWARNFLAGS.gcc= -Wno-shadow
 MAN=		ctld.8 ctl.conf.5
 
 LIBADD=		bsdxml iscsiutil nvmf md sbuf util ucl m nv util++

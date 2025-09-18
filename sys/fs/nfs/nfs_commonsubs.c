@@ -135,7 +135,7 @@ struct nfsv4_opflag nfsv4_opflag[NFSV42_NOPS] = {
 	{ 1, 2, 0, 0, LK_EXCLUSIVE, 1, 1 },		/* Lookupp */
 	{ 0, 1, 0, 0, LK_EXCLUSIVE, 1, 1 },		/* NVerify */
 	{ 1, 1, 0, 1, LK_EXCLUSIVE, 1, 0 },		/* Open */
-	{ 1, 1, 1, 1, LK_EXCLUSIVE, 1, 1 },		/* OpenAttr */
+	{ 1, 1, 0, 0, LK_EXCLUSIVE, 1, 0 },		/* OpenAttr */
 	{ 0, 1, 0, 0, LK_EXCLUSIVE, 1, 0 },		/* OpenConfirm */
 	{ 0, 1, 0, 0, LK_EXCLUSIVE, 1, 0 },		/* OpenDowngrade */
 	{ 1, 0, 0, 0, LK_EXCLUSIVE, 1, 1 },		/* PutFH */
@@ -218,8 +218,8 @@ NFSD_VNET_DEFINE_STATIC(u_char *, nfsrv_dnsname) = NULL;
  */
 static int nfs_bigreply[NFSV42_NPROCS] = { 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-    1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0 };
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 0, 0, 1, 0, 0, 0, 0, 0 };
 
 /* local functions */
 static int nfsrv_skipace(struct nfsrv_descript *nd, int *acesizep);
@@ -230,8 +230,6 @@ static void nfsrv_removeuser(struct nfsusrgrp *usrp, int isuser);
 static int nfsrv_getrefstr(struct nfsrv_descript *, u_char **, u_char **,
     int *, int *);
 static void nfsrv_refstrbigenough(int, u_char **, u_char **, int *);
-static uint32_t vtonfsv4_type(struct vattr *);
-static __enum_uint8(vtype) nfsv4tov_type(uint32_t, uint16_t *);
 
 static struct {
 	int	op;
@@ -253,8 +251,9 @@ static struct {
 	{ NFSV4OP_CREATE, 3, "Create", 6, },
 	{ NFSV4OP_REMOVE, 3, "Remove", 6, },
 	{ NFSV4OP_REMOVE, 1, "Remove", 6, },
-	{ NFSV4OP_SAVEFH, 7, "Rename", 6, },
-	{ NFSV4OP_SAVEFH, 6, "Link", 4, },
+	{ NFSV4OP_REMOVE, 1, "Remove", 6, },
+	{ NFSV4OP_SAVEFH, 5, "Rename", 6, },
+	{ NFSV4OP_SAVEFH, 4, "Link", 4, },
 	{ NFSV4OP_READDIR, 2, "Readdir", 7, },
 	{ NFSV4OP_READDIR, 2, "Readdir", 7, },
 	{ NFSV4OP_GETATTR, 1, "Getattr", 7, },
@@ -309,8 +308,6 @@ static struct {
 	{ NFSV4OP_DEALLOCATE, 2, "Deallocate", 10, },
 	{ NFSV4OP_LAYOUTERROR, 1, "LayoutError", 11, },
 	{ NFSV4OP_VERIFY, 3, "AppendWrite", 11, },
-	{ NFSV4OP_OPENATTR, 3, "OpenAttr", 8, },
-	{ NFSV4OP_SAVEFH, 5, "Clone", 5, },
 };
 
 /*
@@ -320,7 +317,7 @@ static int nfs_bigrequest[NFSV42_NPROCS] = {
 	0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
-	0, 1, 0, 0
+	0, 1
 };
 
 /*
@@ -994,17 +991,6 @@ nfsm_fhtom(struct nfsmount *nmp, struct nfsrv_descript *nd, u_int8_t *fhp,
 		    (nmp->nm_privflag & NFSMNTP_FAKEROOTFH) != 0) {
 			fhp = nmp->nm_fh;
 			size = nmp->nm_fhsize;
-		} else if (size >= NFSX_FHMAX + NFSX_V4NAMEDDIRFH &&
-		    size <= NFSX_FHMAX + NFSX_V4NAMEDATTRFH) {
-			size -= (NFSX_FHMAX - NFSX_MYFH);
-			NFSM_BUILD(tl, uint32_t *, NFSX_MYFH +
-			    2 * NFSX_UNSIGNED);
-			*tl++ = txdr_unsigned(size);
-			NFSBCOPY(fhp, tl, NFSX_MYFH);
-			tl += (NFSX_MYFH / NFSX_UNSIGNED);
-			*tl = 0;
-			bytesize = NFSX_MYFH + 2 * NFSX_UNSIGNED;
-			break;
 		}
 		fullsiz = NFSM_RNDUP(size);
 		if (set_true) {
@@ -1302,8 +1288,7 @@ nfsv4_loadattr(struct nfsrv_descript *nd, vnode_t vp,
     struct nfsvattr *nap, struct nfsfh **nfhpp, fhandle_t *fhp, int fhsize,
     struct nfsv3_pathconf *pc, struct statfs *sbp, struct nfsstatfs *sfp,
     struct nfsfsinfo *fsp, NFSACL_T *aclp, int compare, int *retcmpp,
-    u_int32_t *leasep, u_int32_t *rderrp, bool *has_namedattrp,
-    uint32_t *clone_blksizep, NFSPROC_T *p, struct ucred *cred)
+    u_int32_t *leasep, u_int32_t *rderrp, NFSPROC_T *p, struct ucred *cred)
 {
 	u_int32_t *tl;
 	int i = 0, j, k, l = 0, m, bitpos, attrsum = 0;
@@ -1319,8 +1304,6 @@ nfsv4_loadattr(struct nfsrv_descript *nd, vnode_t vp,
 	gid_t gid;
 	u_int32_t freenum = 0, tuint;
 	u_int64_t uquad = 0, thyp, thyp2;
-	uint16_t tui16;
-	long has_pathconf;
 #ifdef QUOTA
 	struct dqblk dqb;
 	uid_t savuid;
@@ -1394,8 +1377,6 @@ nfsv4_loadattr(struct nfsrv_descript *nd, vnode_t vp,
 			sfp->sf_tbytes = UINT64_MAX;
 			sfp->sf_abytes = UINT64_MAX;
 		}
-		if (has_namedattrp != NULL)
-			*has_namedattrp = false;
 	}
 
 	/*
@@ -1455,16 +1436,11 @@ nfsv4_loadattr(struct nfsrv_descript *nd, vnode_t vp,
 			NFSM_DISSECT(tl, u_int32_t *, NFSX_UNSIGNED);
 			if (compare) {
 				if (!(*retcmpp)) {
-				    tui16 = 0;
-				    if (nap->na_type != nfsv4tov_type(*tl,
-					&tui16) ||
-					((nap->na_bsdflags & SFBSD_NAMEDATTR) ^
-					 tui16) != 0)
+				    if (nap->na_type != nfsv34tov_type(*tl))
 					*retcmpp = NFSERR_NOTSAME;
 				}
 			} else if (nap != NULL) {
-				nap->na_type = nfsv4tov_type(*tl,
-				    &nap->na_bsdflags);
+				nap->na_type = nfsv34tov_type(*tl);
 			}
 			attrsum += NFSX_UNSIGNED;
 			break;
@@ -1543,23 +1519,9 @@ nfsv4_loadattr(struct nfsrv_descript *nd, vnode_t vp,
 			break;
 		case NFSATTRBIT_NAMEDATTR:
 			NFSM_DISSECT(tl, u_int32_t *, NFSX_UNSIGNED);
-			if (compare) {
-				if (!(*retcmpp)) {
-					if (vp == NULL || VOP_PATHCONF(vp,
-					    _PC_HAS_NAMEDATTR, &has_pathconf)
-					    != 0)
-						has_pathconf = 0;
-					if ((has_pathconf != 0 &&
-					     *tl != newnfs_true) ||
-					    (has_pathconf == 0 &&
-					    *tl != newnfs_false))
-						*retcmpp = NFSERR_NOTSAME;
-				}
-			} else if (has_namedattrp != NULL) {
-				if (*tl == newnfs_true)
-					*has_namedattrp = true;
-				else
-					*has_namedattrp = false;
+			if (compare && !(*retcmpp)) {
+				if (*tl != newnfs_false)
+					*retcmpp = NFSERR_NOTSAME;
 			}
 			attrsum += NFSX_UNSIGNED;
 			break;
@@ -1733,8 +1695,6 @@ nfsv4_loadattr(struct nfsrv_descript *nd, vnode_t vp,
 				goto nfsmout;
 			tfhsize = tnfhp->nfh_len;
 			if (compare) {
-				if (tfhsize > NFSX_MYFH)
-					tfhsize = NFSX_MYFH;
 				if (!(*retcmpp) &&
 				    !NFSRV_CMPFH(tnfhp->nfh_fh, tfhsize,
 				     fhp, fhsize))
@@ -2687,7 +2647,8 @@ nfsv4_fillattr(struct nfsrv_descript *nd, struct mount *mp, vnode_t vp,
 	struct nfsfsinfo fsinf;
 	struct timespec temptime;
 	NFSACL_T *aclp, *naclp = NULL;
-	short irflag;
+	size_t atsiz;
+	bool xattrsupp;
 #ifdef QUOTA
 	struct dqblk dqb;
 	uid_t savuid;
@@ -2803,7 +2764,7 @@ nfsv4_fillattr(struct nfsrv_descript *nd, struct mount *mp, vnode_t vp,
 			break;
 		case NFSATTRBIT_TYPE:
 			NFSM_BUILD(tl, u_int32_t *, NFSX_UNSIGNED);
-			*tl = vtonfsv4_type(vap);
+			*tl = vtonfsv34_type(vap->va_type);
 			retnum += NFSX_UNSIGNED;
 			break;
 		case NFSATTRBIT_FHEXPIRETYPE:
@@ -2839,10 +2800,7 @@ nfsv4_fillattr(struct nfsrv_descript *nd, struct mount *mp, vnode_t vp,
 			break;
 		case NFSATTRBIT_NAMEDATTR:
 			NFSM_BUILD(tl, u_int32_t *, NFSX_UNSIGNED);
-			if (has_namedattr)
-				*tl = newnfs_true;
-			else
-				*tl = newnfs_false;
+			*tl = newnfs_false;
 			retnum += NFSX_UNSIGNED;
 			break;
 		case NFSATTRBIT_FSID:
@@ -2903,15 +2861,7 @@ nfsv4_fillattr(struct nfsrv_descript *nd, struct mount *mp, vnode_t vp,
 			retnum += NFSX_UNSIGNED;
 			break;
 		case NFSATTRBIT_FILEHANDLE:
-			siz = 0;
-			if (vp != NULL) {
-				irflag = vn_irflag_read(vp);
-				if ((irflag & VIRF_NAMEDDIR) != 0)
-					siz = NFSX_FHMAX + 2;
-				else if ((irflag & VIRF_NAMEDATTR) != 0)
-					siz = NFSX_FHMAX + 3;
-			}
-			retnum += nfsm_fhtom(NULL, nd, (u_int8_t *)fhp, siz, 0);
+			retnum += nfsm_fhtom(NULL, nd, (u_int8_t *)fhp, 0, 0);
 			break;
 		case NFSATTRBIT_FILEID:
 			NFSM_BUILD(tl, u_int32_t *, NFSX_HYPER);
@@ -5300,47 +5250,4 @@ nfsrpc_destroysession(struct nfsmount *nmp, struct nfsclsession *tsep,
 	error = nd->nd_repstat;
 	m_freem(nd->nd_mrep);
 	return (error);
-}
-
-/*
- * Translate a vnode type into an NFSv4 type, including the named
- * attribute types.
- */
-static uint32_t
-vtonfsv4_type(struct vattr *vap)
-{
-	nfstype ntyp;
-
-	if (vap->va_type >= 9)
-		ntyp = NFNON;
-	else
-		ntyp = nfsv34_type[vap->va_type];
-	if ((vap->va_bsdflags & SFBSD_NAMEDATTR) != 0) {
-		if (ntyp == NFDIR)
-			ntyp = NFATTRDIR;
-		else if (ntyp == NFREG)
-			ntyp = NFNAMEDATTR;
-	}
-	return (txdr_unsigned((uint32_t)ntyp));
-}
-
-/*
- * Translate an NFS type to a vnode type.
- */
-static __enum_uint8(vtype)
-nfsv4tov_type(uint32_t ntyp, uint16_t *bsdflags)
-{
-	__enum_uint8(vtype) vtyp;
-
-	ntyp = fxdr_unsigned(uint32_t, ntyp) % (NFNAMEDATTR + 1);
-	if (ntyp == NFATTRDIR) {
-		vtyp = VDIR;
-		*bsdflags |= SFBSD_NAMEDATTR;
-	} else if (ntyp == NFNAMEDATTR) {
-		vtyp = VREG;
-		*bsdflags |= SFBSD_NAMEDATTR;
-	} else {
-		vtyp = nv34tov_type[ntyp];
-	}
-	return (vtyp);
 }

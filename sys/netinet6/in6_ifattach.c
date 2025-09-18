@@ -70,6 +70,8 @@
 #include <netinet6/mld6_var.h>
 #include <netinet6/scope6_var.h>
 
+VNET_DEFINE(unsigned long, in6_maxmtu) = 0;
+
 #ifdef IP6_AUTO_LINKLOCAL
 VNET_DEFINE(int, ip6_auto_linklocal) = IP6_AUTO_LINKLOCAL;
 #else
@@ -649,6 +651,10 @@ in6_ifattach(struct ifnet *ifp, struct ifnet *altifp)
 		else
 			ifa_free(&ia->ia_ifa);
 	}
+
+	/* update dynamically. */
+	if (V_in6_maxmtu < ifp->if_mtu)
+		V_in6_maxmtu = ifp->if_mtu;
 }
 
 /*

@@ -510,8 +510,7 @@ ieee80211_ioctl_getstainfo(struct ieee80211vap *vap, struct ieee80211req *ireq)
 	error = copyin(ireq->i_data, macaddr, IEEE80211_ADDR_LEN);
 	if (error != 0)
 		return error;
-	if (IEEE80211_ADDR_EQ(macaddr,
-	    ieee80211_vap_get_broadcast_address(vap))) {
+	if (IEEE80211_ADDR_EQ(macaddr, vap->iv_ifp->if_broadcastaddr)) {
 		ni = NULL;
 	} else {
 		ni = ieee80211_find_vap_node(&vap->iv_ic->ic_sta, vap, macaddr);
@@ -1372,8 +1371,7 @@ setmlme_dropsta(struct ieee80211vap *vap,
 	int error = 0;
 
 	/* NB: the broadcast address means do 'em all */
-	if (!IEEE80211_ADDR_EQ(mac,
-	    ieee80211_vap_get_broadcast_address(vap))) {
+	if (!IEEE80211_ADDR_EQ(mac, vap->iv_ifp->if_broadcastaddr)) {
 		IEEE80211_NODE_LOCK(nt);
 		ni = ieee80211_find_node_locked(nt, mac);
 		IEEE80211_NODE_UNLOCK(nt);
@@ -1532,8 +1530,7 @@ struct scanlookup {
 	const uint8_t *mac;
 	int esslen;
 	const uint8_t *essid;
-	bool found;
-	struct ieee80211_scan_entry se;
+	const struct ieee80211_scan_entry *se;
 };
 
 /*
@@ -1543,10 +1540,6 @@ static void
 mlmelookup(void *arg, const struct ieee80211_scan_entry *se)
 {
 	struct scanlookup *look = arg;
-	int rv;
-
-	if (look->found)
-		return;
 
 	if (!IEEE80211_ADDR_EQ(look->mac, se->se_macaddr))
 		return;
@@ -1556,14 +1549,7 @@ mlmelookup(void *arg, const struct ieee80211_scan_entry *se)
 		if (memcmp(look->essid, se->se_ssid+2, look->esslen))
 			return;
 	}
-	/*
-	 * First copy everything and then ensure we get our own copy of se_ies. */
-	look->se = *se;
-	look->se.se_ies.data = 0;
-	look->se.se_ies.len = 0;
-	rv = ieee80211_ies_init(&look->se.se_ies, se->se_ies.data, se->se_ies.len);
-	if (rv != 0)	/* No error */
-		look->found = true;
+	look->se = se;
 }
 
 static int
@@ -1572,25 +1558,21 @@ setmlme_assoc_sta(struct ieee80211vap *vap,
 	const uint8_t ssid[IEEE80211_NWID_LEN])
 {
 	struct scanlookup lookup;
-	int rv;
 
 	KASSERT(vap->iv_opmode == IEEE80211_M_STA,
 	    ("expected opmode STA not %s",
 	    ieee80211_opmode_name[vap->iv_opmode]));
 
 	/* NB: this is racey if roaming is !manual */
+	lookup.se = NULL;
 	lookup.mac = mac;
 	lookup.esslen = ssid_len;
 	lookup.essid = ssid;
-	memset(&lookup.se, 0, sizeof(lookup.se));
-	lookup.found = false;
 	ieee80211_scan_iterate(vap, mlmelookup, &lookup);
-	if (!lookup.found)
+	if (lookup.se == NULL)
 		return ENOENT;
 	mlmedebug(vap, mac, IEEE80211_MLME_ASSOC, 0);
-	rv = ieee80211_sta_join(vap, lookup.se.se_chan, &lookup.se);
-	ieee80211_ies_cleanup(&lookup.se.se_ies);
-	if (rv == 0)
+	if (!ieee80211_sta_join(vap, lookup.se->se_chan, lookup.se))
 		return EIO;		/* XXX unique but could be better */
 	return 0;
 }
@@ -3633,7 +3615,7 @@ ieee80211_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 					wait = 1;
 				ieee80211_start_locked(vap);
 			}
-		} else if (ieee80211_vap_ifp_check_is_running(vap)) {
+		} else if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
 			/*
 			 * Stop ourself.  If we are the last vap to be
 			 * marked down the parent will also be taken down.
@@ -3645,8 +3627,24 @@ ieee80211_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		IEEE80211_UNLOCK(ic);
 		/* Wait for parent ioctl handler if it was queued */
 		if (wait) {
+			struct epoch_tracker et;
+
 			ieee80211_waitfor_parent(ic);
-			ieee80211_vap_sync_mac_address(vap);
+
+			/*
+			 * Check if the MAC address was changed
+			 * via SIOCSIFLLADDR ioctl.
+			 *
+			 * NB: device may be detached during initialization;
+			 * use if_ioctl for existence check.
+			 */
+			NET_EPOCH_ENTER(et);
+			if (ifp->if_ioctl == ieee80211_ioctl &&
+			    (ifp->if_flags & IFF_UP) == 0 &&
+			    !IEEE80211_ADDR_EQ(vap->iv_myaddr, IF_LLADDR(ifp)))
+				IEEE80211_ADDR_COPY(vap->iv_myaddr,
+				    IF_LLADDR(ifp));
+			NET_EPOCH_EXIT(et);
 		}
 		break;
 	case SIOCADDMULTI:

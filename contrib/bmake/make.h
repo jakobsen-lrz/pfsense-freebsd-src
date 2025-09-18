@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.361 2025/07/06 07:11:31 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.350 2025/03/07 06:50:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -553,7 +553,6 @@ extern enum PosixState {
 	PS_NOT_YET,
 	PS_MAYBE_NEXT_LINE,
 	PS_NOW_OR_NEVER,
-	PS_SET,
 	PS_TOO_LATE
 } posix_state;
 
@@ -1083,9 +1082,7 @@ void Global_Append(const char *, const char *);
 void Global_Delete(const char *);
 void Global_Set_ReadOnly(const char *, const char *);
 
-void EvalStack_PushMakeflags(const char *);
-void EvalStack_Pop(void);
-bool EvalStack_Details(Buffer *buf) MAKE_ATTR_USE;
+void EvalStack_PrintDetails(void);
 
 /* util.c */
 typedef void (*SignalProc)(int);

@@ -31,6 +31,55 @@ main() {
 	shift $(( ${OPTIND} - 1 ))
 
 	case "${outname}" in
+		bootloader)
+			pkgdeps=""
+			;;
+		certctl)
+			pkgdeps="caroot openssl"
+			;;
+		clang)
+			pkgdeps="lld libcompiler_rt-dev"
+			;;
+		periodic)
+			pkgdeps="cron"
+			;;
+
+		# -dev packages that have no corresponding non-dev package
+		# as a dependency.
+		libcompat-dev|libcompiler_rt-dev|liby-dev)
+			outname=${outname%%-dev}
+			_descr="Development Files"
+			;;
+		libcompat-lib32_dev|libcompiler_rt-lib32_dev|liby-lib32_dev)
+			outname=${outname%%-lib32_dev}
+			_descr="32-bit Libraries, Development Files"
+			;;
+		libcompat-man|libelftc-man)
+			outname=${outname%%-man}
+			_descr="Manual Pages"
+			;;
+		utilities)
+			uclfile="${uclfile}"
+			;;
+		runtime)
+			outname="runtime"
+			_descr="$(make -C ${srctree}/release/packages -f Makefile.package -V ${outname}_DESCR)"
+			;;
+		*-lib32_dev)
+			outname="${outname%%-lib32_dev}"
+			_descr="32-bit Libraries, Development Files"
+			pkgdeps="${outname}"
+			;;
+		*-lib32_dbg)
+			outname="${outname%%-lib32_dbg}"
+			_descr="32-bit Libraries, Debugging Symbols"
+			pkgdeps="${outname}"
+			;;
+		*-lib32)
+			outname="${outname%%-lib32}"
+			_descr="32-bit Libraries"
+			pkgdeps="${outname}"
+			;;
 		*-dev)
 			outname="${outname%%-dev}"
 			;;
@@ -62,7 +111,7 @@ main() {
 
 	uclsource="${srctree}/release/packages/template.ucl"
 
-	if [ -n "${debug}" ]; then
+	if [ ! -z "${debug}" ]; then
 		echo ""
 		echo "==============================================================="
 		echo "DEBUG:"
@@ -78,6 +127,23 @@ main() {
 		echo ""
 	fi
 
+	[ -z "${comment}" ] && comment="${outname} package"
+	[ ! -z "${_descr}" ] && comment="${comment} (${_descr})"
+	[ -z "${desc}" ] && desc="${outname} package"
+
+	cp "${uclsource}" "${uclfile}"
+	if [ ! -z "${pkgdeps}" ]; then
+		echo 'deps: {' >> ${uclfile}
+		for dep in ${pkgdeps}; do
+			cat <<EOF >> ${uclfile}
+	${PKG_NAME_PREFIX}-${dep}: {
+		origin: "base",
+		version: "${PKG_VERSION}"
+	}
+EOF
+		done
+		echo '}' >> ${uclfile}
+	fi
 	cap_arg="$( make -f ${srctree}/share/mk/bsd.endian.mk -VCAP_MKDB_ENDIAN )"
 	${srctree}/release/packages/generate-ucl.lua \
 		VERSION "${PKG_VERSION}" \

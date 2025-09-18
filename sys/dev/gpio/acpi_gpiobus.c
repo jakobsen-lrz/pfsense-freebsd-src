@@ -166,8 +166,27 @@ acpi_gpiobus_enumerate_aei(ACPI_RESOURCE *res, void *context)
 	if (gpio_res->ConnectionType != ACPI_RESOURCE_GPIO_TYPE_INT)
 		return (AE_OK);
 
-	for (int i = 0; i < gpio_res->PinTableLength; i++)
-		pins[(*npins)++] = gpio_res->PinTable[i];
+	/* Add a child. */
+	child = device_add_child_ordered(bus, 0, "gpio_aei", DEVICE_UNIT_ANY);
+	if (child == NULL)
+		return (AE_OK);
+	devi = acpi_gpiobus_setup_devinfo(bus, child, gpio_res);
+	if (devi == NULL) {
+		device_delete_child(bus, child);
+		return (AE_OK);
+	}
+	device_set_ivars(child, devi);
+
+	for (int i = 0; i < devi->gpiobus.npins; i++) {
+		if (GPIOBUS_PIN_SETFLAGS(bus, child, 0, devi->flags)) {
+			device_delete_child(bus, child);
+			return (AE_OK);
+		}
+	}
+
+	/* Pass ACPI information to children. */
+	devi->dev_handle = ctx->dev_handle;
+
 	return (AE_OK);
 }
 
@@ -364,8 +383,13 @@ acpi_gpiobus_attach(device_t dev)
 	if (ACPI_FAILURE(status))
 		device_printf(dev, "Failed to enumerate GPIO resources\n");
 
-	/* Look for AEI child */
-	acpi_gpiobus_attach_aei(sc, handle);
+	/* Look for AEI children */
+	status = AcpiWalkResources(handle, "_AEI", acpi_gpiobus_enumerate_aei,
+	    &ctx);
+
+	if (ACPI_FAILURE(status))
+		device_printf(dev, "Failed to enumerate GPIO resources\n");
+
 	return (0);
 }
 
@@ -388,6 +412,23 @@ acpi_gpiobus_detach(device_t dev)
 	return (gpiobus_detach(dev));
 }
 
+int
+gpio_pin_get_by_acpi_index(device_t consumer, uint32_t idx,
+    gpio_pin_t *out_pin)
+{
+	struct acpi_gpiobus_ivar *devi;
+	int rv;
+
+	rv = gpio_pin_get_by_child_index(consumer, idx, out_pin);
+	if (rv != 0)
+		return (rv);
+
+	devi = device_get_ivars(consumer);
+	(*out_pin)->flags = devi->flags;
+
+	return (0);
+}
+
 static int
 acpi_gpiobus_read_ivar(device_t dev, device_t child, int which,
     uintptr_t *result)
@@ -396,7 +437,7 @@ acpi_gpiobus_read_ivar(device_t dev, device_t child, int which,
 
 	switch (which) {
 	case ACPI_GPIOBUS_IVAR_HANDLE:
-		*result = (uintptr_t)devi->handle;
+		*result = (uintptr_t)devi->dev_handle;
 		break;
 	default:
 		return (gpiobus_read_ivar(dev, child, which, result));

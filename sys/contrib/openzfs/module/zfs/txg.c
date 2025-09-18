@@ -700,13 +700,11 @@ txg_delay(dsl_pool_t *dp, uint64_t txg, hrtime_t delay, hrtime_t resolution)
 	mutex_exit(&tx->tx_sync_lock);
 }
 
-int
-txg_wait_synced_flags(dsl_pool_t *dp, uint64_t txg, txg_wait_flag_t flags)
+static boolean_t
+txg_wait_synced_impl(dsl_pool_t *dp, uint64_t txg, boolean_t wait_sig)
 {
-	int error = 0;
 	tx_state_t *tx = &dp->dp_tx;
 
-	ASSERT0(flags & ~(TXG_WAIT_SIGNAL | TXG_WAIT_SUSPEND));
 	ASSERT(!dsl_pool_config_held(dp));
 
 	mutex_enter(&tx->tx_sync_lock);
@@ -718,11 +716,6 @@ txg_wait_synced_flags(dsl_pool_t *dp, uint64_t txg, txg_wait_flag_t flags)
 	dprintf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
 	    (u_longlong_t)txg, (u_longlong_t)tx->tx_quiesce_txg_waiting,
 	    (u_longlong_t)tx->tx_sync_txg_waiting);
-
-	/*
-	 * Keep pushing util the pool gets to the wanted txg. If something
-	 * else interesting happens, we'll set an error and break out.
-	 */
 	while (tx->tx_synced_txg < txg) {
 		if ((flags & TXG_WAIT_SUSPEND) && spa_suspended(dp->dp_spa)) {
 			/*
@@ -738,8 +731,7 @@ txg_wait_synced_flags(dsl_pool_t *dp, uint64_t txg, txg_wait_flag_t flags)
 		    (u_longlong_t)tx->tx_synced_txg,
 		    (u_longlong_t)tx->tx_sync_txg_waiting, dp);
 		cv_broadcast(&tx->tx_sync_more_cv);
-
-		if (flags & TXG_WAIT_SIGNAL) {
+		if (wait_sig) {
 			/*
 			 * Condition wait here but stop if the thread receives a
 			 * signal. The caller may call txg_wait_synced*() again
@@ -747,23 +739,31 @@ txg_wait_synced_flags(dsl_pool_t *dp, uint64_t txg, txg_wait_flag_t flags)
 			 */
 			if (cv_wait_io_sig(&tx->tx_sync_done_cv,
 			    &tx->tx_sync_lock) == 0) {
-				error = SET_ERROR(EINTR);
-				break;
+				mutex_exit(&tx->tx_sync_lock);
+				return (B_TRUE);
 			}
 		} else {
-			/* Uninterruptable wait, until the condvar fires */
 			cv_wait_io(&tx->tx_sync_done_cv, &tx->tx_sync_lock);
 		}
 	}
-
 	mutex_exit(&tx->tx_sync_lock);
-	return (error);
+	return (B_FALSE);
 }
 
 void
 txg_wait_synced(dsl_pool_t *dp, uint64_t txg)
 {
-	VERIFY0(txg_wait_synced_flags(dp, txg, TXG_WAIT_NONE));
+	VERIFY0(txg_wait_synced_impl(dp, txg, B_FALSE));
+}
+
+/*
+ * Similar to a txg_wait_synced but it can be interrupted from a signal.
+ * Returns B_TRUE if the thread was signaled while waiting.
+ */
+boolean_t
+txg_wait_synced_sig(dsl_pool_t *dp, uint64_t txg)
+{
+	return (txg_wait_synced_impl(dp, txg, B_TRUE));
 }
 
 void

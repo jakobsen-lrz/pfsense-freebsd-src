@@ -50,16 +50,14 @@ static void usage(void) __dead2;
 struct efi_table_op {
 	char name[TABLE_MAX_LEN];
 	void (*parse) (const void *);
-	efi_guid_t guid;
+	struct uuid uuid;
 };
 
 static const struct efi_table_op efi_table_ops[] = {
 	{ .name = "esrt", .parse = efi_table_print_esrt,
-	    .guid = EFI_TABLE_ESRT },
+	    .uuid = EFI_TABLE_ESRT },
 	{ .name = "prop", .parse = efi_table_print_prop,
-	    .guid = EFI_PROPERTIES_TABLE },
-	{ .name = "memory", .parse = efi_table_print_memory,
-	    .guid = EFI_MEMORY_ATTRIBUTES_TABLE }
+	    .uuid = EFI_PROPERTIES_TABLE }
 };
 
 int
@@ -84,22 +82,13 @@ main(int argc, char **argv)
 	if (argc < 0)
 		exit(EXIT_FAILURE);
 
-	while ((ch = getopt_long(argc, argv, "g:t:u:", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "u:t:", longopts, NULL)) != -1) {
 		switch (ch) {
-		case 'g':
 		case 'u':
 		{
 			char *uuid_str = optarg;
 			struct uuid uuid;
 			uint32_t status;
-
-			/*
-			 * Note: we use the uuid parsing routine to parse the
-			 * guid strings. However, EFI defines a slightly
-			 * different structure to access them. We unify on
-			 * using a structure that's compatible with EDK2
-			 * EFI_GUID structure.
-			 */
 
 			uuid_set = 1;
 
@@ -108,7 +97,7 @@ main(int argc, char **argv)
 				xo_errx(EX_DATAERR, "invalid UUID");
 
 			for (size_t n = 0; n < nitems(efi_table_ops); n++) {
-				if (!memcmp(&uuid, &efi_table_ops[n].guid,
+				if (!memcmp(&uuid, &efi_table_ops[n].uuid,
 				    sizeof(uuid))) {
 					efi_idx = n;
 					got_table = true;
@@ -152,7 +141,7 @@ main(int argc, char **argv)
 	if (efi_fd < 0)
 		xo_err(EX_OSFILE, "/dev/efi");
 
-	memcpy(&table.uuid, &efi_table_ops[efi_idx].guid, sizeof(struct uuid));
+	table.uuid = efi_table_ops[efi_idx].uuid;
 	if (ioctl(efi_fd, EFIIOC_GET_TABLE, &table) == -1)
 		xo_err(EX_OSERR, "EFIIOC_GET_TABLE (len == 0)");
 
@@ -193,7 +182,7 @@ efi_table_print_esrt(const void *data)
 		uint32_t status;
 		char *uuid;
 
-		uuid_to_string((const uuid_t *)&e->fw_class, &uuid, &status);
+		uuid_to_string(&e->fw_class, &uuid, &status);
 		if (status != uuid_s_ok) {
 			xo_errx(EX_DATAERR, "uuid_to_string error");
 		}
@@ -289,6 +278,6 @@ efi_table_print_memory(const void *data)
 
 static void usage(void)
 {
-	xo_error("usage: efitable [-g guid | -t name] [--libxo]\n");
+	xo_error("usage: efitable [-d uuid | -t name] [--libxo]\n");
 	exit(EX_USAGE);
 }

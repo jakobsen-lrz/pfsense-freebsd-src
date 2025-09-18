@@ -994,10 +994,14 @@ iscsi_connection::login()
 			    conn_target->name(), ag->label());
 		}
 	} else {
-		assert(conn_session_type == CONN_SESSION_TYPE_DISCOVERY);
-		ag = pg->discovery_auth_group();
-		log_debugx("initiator requests discovery session; %s",
-		    ag->label());
+		assert(conn->conn_session_type == CONN_SESSION_TYPE_DISCOVERY);
+		ag = pg->pg_discovery_auth_group;
+		if (ag->ag_name != NULL) {
+			log_debugx("initiator requests "
+			    "discovery session; auth-group \"%s\"", ag->ag_name);
+		} else {
+			log_debugx("initiator requests discovery session");
+		}
 	}
 
 	if (ag->type() == auth_type::DENY) {

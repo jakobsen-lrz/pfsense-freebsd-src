@@ -429,15 +429,6 @@ SYSCTL_INT(_vm_pmap, OID_AUTO, la57, CTLFLAG_RDTUN | CTLFLAG_NOFETCH,
     &la57, 0,
     "5-level paging for host is enabled");
 
-/*
- * The default value is needed in order to preserve compatibility with
- * some userspace programs that put tags into sign-extended bits.
- */
-int prefer_uva_la48 = 1;
-SYSCTL_INT(_vm_pmap, OID_AUTO, prefer_uva_la48, CTLFLAG_RDTUN,
-    &prefer_uva_la48, 0,
-    "Userspace maps are limited to LA48 unless otherwise configured");
-
 static bool
 pmap_is_la57(pmap_t pmap)
 {
@@ -7634,32 +7625,30 @@ void
 pmap_enter_object(pmap_t pmap, vm_offset_t start, vm_offset_t end,
     vm_page_t m_start, vm_prot_t prot)
 {
-	struct pctrie_iter pages;
 	struct rwlock *lock;
 	vm_offset_t va;
 	vm_page_t m, mpte;
+	vm_pindex_t diff, psize;
 	int rv;
 
 	VM_OBJECT_ASSERT_LOCKED(m_start->object);
 
+	psize = atop(end - start);
 	mpte = NULL;
-	vm_page_iter_limit_init(&pages, m_start->object,
-	    m_start->pindex + atop(end - start));
-	m = vm_radix_iter_lookup(&pages, m_start->pindex);
+	m = m_start;
 	lock = NULL;
 	PMAP_LOCK(pmap);
-	while (m != NULL) {
-		va = start + ptoa(m->pindex - m_start->pindex);
+	while (m != NULL && (diff = m->pindex - m_start->pindex) < psize) {
+		va = start + ptoa(diff);
 		if ((va & PDRMASK) == 0 && va + NBPDR <= end &&
 		    m->psind == 1 && pmap_ps_enabled(pmap) &&
 		    ((rv = pmap_enter_2mpage(pmap, va, m, prot, &lock)) ==
 		    KERN_SUCCESS || rv == KERN_NO_SPACE))
-			m = vm_radix_iter_jump(&pages, NBPDR / PAGE_SIZE);
-		else {
+			m = &m[NBPDR / PAGE_SIZE - 1];
+		else
 			mpte = pmap_enter_quick_locked(pmap, va, m, prot,
 			    mpte, &lock);
-			m = vm_radix_iter_step(&pages);
-		}
+		m = TAILQ_NEXT(m, listq);
 	}
 	if (lock != NULL)
 		rw_wunlock(lock);
@@ -7833,7 +7822,6 @@ void
 pmap_object_init_pt(pmap_t pmap, vm_offset_t addr, vm_object_t object,
     vm_pindex_t pindex, vm_size_t size)
 {
-	struct pctrie_iter pages;
 	pd_entry_t *pde;
 	pt_entry_t PG_A, PG_M, PG_RW, PG_V;
 	vm_paddr_t pa, ptepa;
@@ -7853,8 +7841,7 @@ pmap_object_init_pt(pmap_t pmap, vm_offset_t addr, vm_object_t object,
 			return;
 		if (!vm_object_populate(object, pindex, pindex + atop(size)))
 			return;
-		vm_page_iter_init(&pages, object);
-		p = vm_radix_iter_lookup(&pages, pindex);
+		p = vm_page_lookup(object, pindex);
 		KASSERT(vm_page_all_valid(p),
 		    ("pmap_object_init_pt: invalid page %p", p));
 		pat_mode = p->md.pat_mode;
@@ -7872,14 +7859,15 @@ pmap_object_init_pt(pmap_t pmap, vm_offset_t addr, vm_object_t object,
 		 * the pages are not physically contiguous or have differing
 		 * memory attributes.
 		 */
+		p = TAILQ_NEXT(p, listq);
 		for (pa = ptepa + PAGE_SIZE; pa < ptepa + size;
 		    pa += PAGE_SIZE) {
-			p = vm_radix_iter_next(&pages);
 			KASSERT(vm_page_all_valid(p),
 			    ("pmap_object_init_pt: invalid page %p", p));
 			if (pa != VM_PAGE_TO_PHYS(p) ||
 			    pat_mode != p->md.pat_mode)
 				return;
+			p = TAILQ_NEXT(p, listq);
 		}
 
 		/*

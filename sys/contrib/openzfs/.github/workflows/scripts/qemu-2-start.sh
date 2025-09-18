@@ -12,15 +12,15 @@ OS="$1"
 # OS variant (virt-install --os-variant list)
 OSv=$OS
 
-# FreeBSD urls's
-FREEBSD_REL="https://download.freebsd.org/releases/CI-IMAGES"
-FREEBSD_SNAP="https://download.freebsd.org/snapshots/CI-IMAGES"
-URLxz=""
+# compressed with .zst extension
+REPO="https://github.com/mcmilk/openzfs-freebsd-images"
+FREEBSD="$REPO/releases/download/v2024-12-14"
+URLzs=""
 
 # Ubuntu mirrors
-UBMIRROR="https://cloud-images.ubuntu.com"
+#UBMIRROR="https://cloud-images.ubuntu.com"
 #UBMIRROR="https://mirrors.cloud.tencent.com/ubuntu-cloud-images"
-#UBMIRROR="https://mirror.citrahost.com/ubuntu-cloud-images"
+UBMIRROR="https://mirror.citrahost.com/ubuntu-cloud-images"
 
 # default nic model for vm's
 NIC="virtio"
@@ -42,6 +42,8 @@ case "$OS" in
   archlinux)
     OSNAME="Archlinux"
     URL="https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2"
+    # dns sometimes fails with that url  :/
+    echo "89.187.191.12  geo.mirror.pkgbuild.com" | sudo tee /etc/hosts > /dev/null
     ;;
   centos-stream10)
     OSNAME="CentOS Stream 10"
@@ -66,17 +68,11 @@ case "$OS" in
     OSv="fedora-unknown"
     URL="https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
     ;;
-  fedora42)
-    OSNAME="Fedora 42"
-    OSv="fedora-unknown"
-    URL="https://download.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
-    ;;
-  freebsd13-5r)
-    FreeBSD="13.5-RELEASE"
-    OSNAME="FreeBSD $FreeBSD"
+  freebsd13-4r)
+    OSNAME="FreeBSD 13.4-RELEASE"
     OSv="freebsd13.0"
-    URLxz="$FREEBSD_REL/$FreeBSD/amd64/Latest/FreeBSD-$FreeBSD-amd64-BASIC-CI.raw.xz"
-    KSRC="$FREEBSD_REL/../amd64/$FreeBSD/src.txz"
+    URLzs="$FREEBSD/amd64-freebsd-13.4-RELEASE.qcow2.zst"
+    BASH="/usr/local/bin/bash"
     NIC="rtl8139"
     ;;
   freebsd14-2r)
@@ -93,12 +89,11 @@ case "$OS" in
     URLxz="$FREEBSD_REL/$FreeBSD/amd64/Latest/FreeBSD-$FreeBSD-amd64-BASIC-CI.raw.xz"
     KSRC="$FREEBSD_REL/../amd64/$FreeBSD/src.txz"
     ;;
-  freebsd13-5s)
-    FreeBSD="13.5-STABLE"
-    OSNAME="FreeBSD $FreeBSD"
+  freebsd13-4s)
+    OSNAME="FreeBSD 13.4-STABLE"
     OSv="freebsd13.0"
-    URLxz="$FREEBSD_SNAP/$FreeBSD/amd64/Latest/FreeBSD-$FreeBSD-amd64-BASIC-CI.raw.xz"
-    KSRC="$FREEBSD_SNAP/../amd64/$FreeBSD/src.txz"
+    URLzs="$FREEBSD/amd64-freebsd-13.4-STABLE.qcow2.zst"
+    BASH="/usr/local/bin/bash"
     NIC="rtl8139"
     ;;
   freebsd14-3s)
@@ -144,7 +139,7 @@ echo "ENV=$ENV" >> $ENV
 # result path
 echo 'RESPATH="/var/tmp/test_results"' >> $ENV
 
-# FreeBSD 13 has problems with: e1000 and virtio
+# FreeBSD 13 has problems with: e1000+virtio
 echo "NIC=$NIC" >> $ENV
 
 # freebsd15 -> used in zfs-qemu.yml
@@ -155,14 +150,6 @@ echo "OSv=\"$OSv\"" >> $ENV
 
 # FreeBSD 15 (Current) -> used for summary
 echo "OSNAME=\"$OSNAME\"" >> $ENV
-
-# default vm count for testings
-VMs=2
-echo "VMs=\"$VMs\"" >> $ENV
-
-# default cpu count for testing vm's
-CPU=2
-echo "CPU=\"$CPU\"" >> $ENV
 
 sudo mkdir -p "/mnt/tests"
 sudo chown -R $(whoami) /mnt/tests
@@ -249,7 +236,7 @@ sudo virt-install \
 #
 # vm0:          Initial VM we install dependencies and build ZFS on.
 # vm1..2        Testing VMs
-for ((i=0; i<=VMs; i++)); do
+for i in {0..9} ; do
   echo "192.168.122.1$i vm$i" | sudo tee -a /etc/hosts
 done
 

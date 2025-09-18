@@ -244,10 +244,10 @@ ieee80211_scan_update_locked(struct ieee80211vap *vap,
 		    "%s: current scanner is <%s:%s>, switch to <%s:%s>\n",
 		    __func__,
 		    ss->ss_vap != NULL ?
-		        ieee80211_get_vap_ifname(ss->ss_vap) : "none",
+			ss->ss_vap->iv_ifp->if_xname : "none",
 		    ss->ss_vap != NULL ?
 			ieee80211_opmode_name[ss->ss_vap->iv_opmode] : "none",
-		    ieee80211_get_vap_ifname(vap),
+		    vap->iv_ifp->if_xname,
 		    ieee80211_opmode_name[vap->iv_opmode]);
 	}
 #endif

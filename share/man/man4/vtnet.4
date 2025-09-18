@@ -105,26 +105,6 @@ The number of queue pairs used is the lesser of the maximum supported by the
 driver and the hypervisor, the number of CPUs present in the guest, and this
 tunable if not zero.
 The default value is 0.
-.It Va hw.vtnet.tso_maxlen
-.It Va hw.vtnet. Ns Ar X Ns Va .tso_maxlen
-This tunable sets the TSO burst limit.
-The default value is 65535.
-.It Va hw.vtnet.rx_process_limit
-.It Va hw.vtnet. Ns Ar X Ns Va .rx_process_limit
-This tunable sets the number of RX segments processed in one pass.
-The default value is 1024.
-.It Va hw.vtnet.lro_entry_count
-.It Va hw.vtnet. Ns Ar X Ns Va .lro_entry_count
-This tunable sets the software LRO entry count.
-The default value is 128, the minimum value is 8.
-.It Va hw.vtnet.lro_mbufq_depth
-.It Va hw.vtnet. Ns Ar X Ns Va .lro_mbufq_depth
-This tunable sets the depth of the software LRO mbuf queue.
-The default value is 0.
-.It Va hw.vtnet.altq_disable
-This tunable disables ALTQ support, allowing the use of multiqueue instead.
-This option applies to all interfaces.
-The default value is 0.
 .El
 .Sh TRANSMIT QUEUE STATISTICS
 .Bl -tag -width "xxxxxx"

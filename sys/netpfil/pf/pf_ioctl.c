@@ -2243,32 +2243,18 @@ pf_ioctl_addrule(struct pf_krule *rule, uint32_t ticket,
 	}
 
 	pf_mv_kpool(&V_pf_pabuf[0], &rule->nat.list);
+	pf_mv_kpool(&V_pf_pabuf[1], &rule->rdr.list);
+	pf_mv_kpool(&V_pf_pabuf[2], &rule->route.list);
+	if (((((rule->action == PF_NAT) || (rule->action == PF_RDR) ||
+	    (rule->action == PF_BINAT)) && rule->anchor == NULL) ||
+	    (rule->rt > PF_NOPFROUTE)) &&
+	    (TAILQ_FIRST(&rule->rdr.list) == NULL &&
+	     TAILQ_FIRST(&rule->route.list) == NULL))
+		error = EINVAL;
 
-	/*
-	 * Old version of pfctl provide route redirection pools in single
-	 * common redirection pool rdr. New versions use rdr only for
-	 * rdr-to rules.
-	 */
-	if (rule->rt > PF_NOPFROUTE && TAILQ_EMPTY(&V_pf_pabuf[2])) {
-		pf_mv_kpool(&V_pf_pabuf[1], &rule->route.list);
-	} else {
-		pf_mv_kpool(&V_pf_pabuf[1], &rule->rdr.list);
-		pf_mv_kpool(&V_pf_pabuf[2], &rule->route.list);
-	}
-
-	if (((rule->action == PF_NAT) || (rule->action == PF_RDR) ||
-	    (rule->action == PF_BINAT))	&& rule->anchor == NULL &&
-	    TAILQ_FIRST(&rule->rdr.list) == NULL) {
-		ERROUT(EINVAL);
-	}
-
-	if (rule->rt > PF_NOPFROUTE && (TAILQ_FIRST(&rule->route.list) == NULL)) {
-		ERROUT(EINVAL);
-	}
-
-	if (rule->action == PF_PASS && (rule->rdr.opts & PF_POOL_STICKYADDR ||
-	    rule->nat.opts & PF_POOL_STICKYADDR) && !rule->keep_state) {
-		ERROUT(EINVAL);
+	if (rule->action == PF_PASS && rule->rdr.opts & PF_POOL_STICKYADDR &&
+	    !rule->keep_state) {
+		error = EINVAL;
 	}
 
 	MPASS(error == 0);
@@ -2564,8 +2550,7 @@ pf_ioctl_set_limit(int index, unsigned int limit, unsigned int *old_limit)
 		PF_RULES_WUNLOCK();
 		return (EINVAL);
 	}
-	uma_zone_set_max(V_pf_limits[index].zone,
-	    limit == 0 ? INT_MAX : limit);
+	uma_zone_set_max(V_pf_limits[index].zone, limit);
 	if (old_limit != NULL)
 		*old_limit = V_pf_limits[index].limit;
 	V_pf_limits[index].limit = limit;
@@ -2613,20 +2598,14 @@ pf_ioctl_add_addr(struct pf_nl_pooladdr *pp)
 	    pp->which != PF_RT)
 		return (EINVAL);
 
-	switch (pp->af) {
-#ifdef INET
-	case AF_INET:
-		/* FALLTHROUGH */
-#endif /* INET */
-#ifdef INET6
-	case AF_INET6:
-		/* FALLTHROUGH */
-#endif /* INET6 */
-	case AF_UNSPEC:
-		break;
-	default:
+#ifndef INET
+	if (pp->af == AF_INET)
 		return (EAFNOSUPPORT);
-	}
+#endif /* INET */
+#ifndef INET6
+	if (pp->af == AF_INET6)
+		return (EAFNOSUPPORT);
+#endif /* INET6 */
 
 	if (pp->addr.addr.type != PF_ADDR_ADDRMASK &&
 	    pp->addr.addr.type != PF_ADDR_DYNIFTL &&
@@ -6455,9 +6434,9 @@ shutdown_pf(void)
 			for (rs_num = 0; rs_num < PF_RULESET_MAX; ++rs_num) {
 				if ((error = pf_begin_rules(&t[rs_num], rs_num,
 				    anchor->path)) != 0) {
-					DPFPRINTF(PF_DEBUG_MISC, "%s: "
-					    "anchor.path=%s rs_num=%d",
-					    __func__, anchor->path, rs_num);
+					DPFPRINTF(PF_DEBUG_MISC, ("shutdown_pf: "
+					    "anchor.path=%s rs_num=%d\n",
+					    anchor->path, rs_num));
 					goto error;	/* XXX: rollback? */
 				}
 			}
@@ -6473,9 +6452,8 @@ shutdown_pf(void)
 		    &V_pf_keth_anchors, tmp_eth_anchor) {
 			if ((error = pf_begin_eth(&t[0], eth_anchor->path))
 			    != 0) {
-				DPFPRINTF(PF_DEBUG_MISC, "%s: eth "
-				    "anchor.path=%s", __func__,
-				    eth_anchor->path);
+				DPFPRINTF(PF_DEBUG_MISC, ("shutdown_pf: eth "
+				    "anchor.path=%s\n", eth_anchor->path));
 				goto error;
 			}
 			error = pf_commit_eth(t[0], eth_anchor->path);
@@ -6484,27 +6462,27 @@ shutdown_pf(void)
 
 		if ((error = pf_begin_rules(&t[0], PF_RULESET_SCRUB, &nn))
 		    != 0) {
-			DPFPRINTF(PF_DEBUG_MISC, "%s: SCRUB", __func__);
+			DPFPRINTF(PF_DEBUG_MISC, ("shutdown_pf: SCRUB\n"));
 			break;
 		}
 		if ((error = pf_begin_rules(&t[1], PF_RULESET_FILTER, &nn))
 		    != 0) {
-			DPFPRINTF(PF_DEBUG_MISC, "%s: FILTER", __func__);
+			DPFPRINTF(PF_DEBUG_MISC, ("shutdown_pf: FILTER\n"));
 			break;		/* XXX: rollback? */
 		}
 		if ((error = pf_begin_rules(&t[2], PF_RULESET_NAT, &nn))
 		    != 0) {
-			DPFPRINTF(PF_DEBUG_MISC, "%s: NAT", __func__);
+			DPFPRINTF(PF_DEBUG_MISC, ("shutdown_pf: NAT\n"));
 			break;		/* XXX: rollback? */
 		}
 		if ((error = pf_begin_rules(&t[3], PF_RULESET_BINAT, &nn))
 		    != 0) {
-			DPFPRINTF(PF_DEBUG_MISC, "%s: BINAT", __func__);
+			DPFPRINTF(PF_DEBUG_MISC, ("shutdown_pf: BINAT\n"));
 			break;		/* XXX: rollback? */
 		}
 		if ((error = pf_begin_rules(&t[4], PF_RULESET_RDR, &nn))
 		    != 0) {
-			DPFPRINTF(PF_DEBUG_MISC, "%s: RDR", __func__);
+			DPFPRINTF(PF_DEBUG_MISC, ("shutdown_pf: RDR\n"));
 			break;		/* XXX: rollback? */
 		}
 
@@ -6523,7 +6501,7 @@ shutdown_pf(void)
 			break;
 
 		if ((error = pf_begin_eth(&t[0], &nn)) != 0) {
-			DPFPRINTF(PF_DEBUG_MISC, "%s: eth", __func__);
+			DPFPRINTF(PF_DEBUG_MISC, ("shutdown_pf: eth\n"));
 			break;
 		}
 		error = pf_commit_eth(t[0], &nn);
@@ -6531,7 +6509,7 @@ shutdown_pf(void)
 
 #ifdef ALTQ
 		if ((error = pf_begin_altq(&t[0])) != 0) {
-			DPFPRINTF(PF_DEBUG_MISC, "%s: ALTQ", __func__);
+			DPFPRINTF(PF_DEBUG_MISC, ("shutdown_pf: ALTQ\n"));
 			break;
 		}
 		pf_commit_altq(t[0]);

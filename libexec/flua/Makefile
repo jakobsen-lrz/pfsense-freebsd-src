@@ -11,6 +11,7 @@ LUASRC?=	${SRCTOP}/contrib/lua/src
 
 PROG=	flua
 WARNS?=	3
+MAN=	# No manpage; this is internal.
 
 CWARNFLAGS.gcc+=	-Wno-format-nonliteral
 

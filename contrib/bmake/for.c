@@ -1,4 +1,4 @@
-/*	$NetBSD: for.c,v 1.186 2025/06/28 22:39:27 rillig Exp $	*/
+/*	$NetBSD: for.c,v 1.182 2024/06/07 18:57:30 rillig Exp $	*/
 
 /*
  * Copyright (c) 1992, The Regents of the University of California.
@@ -58,7 +58,7 @@
 #include "make.h"
 
 /*	"@(#)for.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: for.c,v 1.186 2025/06/28 22:39:27 rillig Exp $");
+MAKE_RCSID("$NetBSD: for.c,v 1.182 2024/06/07 18:57:30 rillig Exp $");
 
 
 typedef struct ForLoop {
@@ -148,24 +148,38 @@ IsValidInVarname(char c)
 static void
 ForLoop_ParseVarnames(ForLoop *f, const char **pp)
 {
-	const char *p = *pp, *start;
+	const char *p = *pp;
 
 	for (;;) {
+		size_t len;
+
 		cpp_skip_whitespace(&p);
 		if (*p == '\0') {
-			Parse_Error(PARSE_FATAL,
-			    "Missing \"in\" in .for loop");
-			goto cleanup;
+			Parse_Error(PARSE_FATAL, "missing `in' in for");
+			while (f->vars.len > 0)
+				free(*(char **)Vector_Pop(&f->vars));
+			return;
 		}
 
-		for (start = p; *p != '\0' && !ch_isspace(*p); p++)
-			if (!IsValidInVarname(*p))
-				goto invalid_variable_name;
+		for (len = 0; p[len] != '\0' && !ch_isspace(p[len]); len++) {
+			if (!IsValidInVarname(p[len])) {
+				Parse_Error(PARSE_FATAL,
+				    "invalid character '%c' "
+				    "in .for loop variable name",
+				    p[len]);
+				while (f->vars.len > 0)
+					free(*(char **)Vector_Pop(&f->vars));
+				return;
+			}
+		}
 
-		if (p - start == 2 && memcmp(start, "in", 2) == 0)
+		if (len == 2 && p[0] == 'i' && p[1] == 'n') {
+			p += 2;
 			break;
+		}
 
-		*(char **)Vector_Push(&f->vars) = bmake_strsedup(start, p);
+		*(char **)Vector_Push(&f->vars) = bmake_strldup(p, len);
+		p += len;
 	}
 
 	if (f->vars.len == 0) {
@@ -175,27 +189,19 @@ ForLoop_ParseVarnames(ForLoop *f, const char **pp)
 	}
 
 	*pp = p;
-	return;
-
-invalid_variable_name:
-	Parse_Error(PARSE_FATAL,
-	    "Invalid character \"%c\" in .for loop variable name", *p);
-cleanup:
-	while (f->vars.len > 0)
-		free(*(char **)Vector_Pop(&f->vars));
 }
 
 static bool
 ForLoop_ParseItems(ForLoop *f, const char *p)
 {
 	char *items;
-	int parseErrorsBefore = parseErrors;
 
 	cpp_skip_whitespace(&p);
 
 	items = Var_Subst(p, SCOPE_GLOBAL, VARE_EVAL);
-	f->items = Substring_Words(
-	    parseErrors == parseErrorsBefore ? items : "", false);
+	/* TODO: handle errors */
+
+	f->items = Substring_Words(items, false);
 	free(items);
 
 	if (f->items.len == 1 && Substring_IsEmpty(f->items.words[0]))

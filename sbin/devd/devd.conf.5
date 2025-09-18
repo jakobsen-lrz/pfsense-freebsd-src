@@ -38,7 +38,7 @@
 .\" ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
 .\" SOFTWARE.
 .\"
-.Dd July 9, 2025
+.Dd December 20, 2024
 .Dt DEVD.CONF 5
 .Os
 .Sh NAME
@@ -490,22 +490,14 @@ A SMART Critical Warning State change has happened.
 $state has a hex bitmask of the bits that changed, as defined
 in the NVMe Standard for Critical Warning field of log page 2
 .Dq SMART / Health Information Log :
-.Pp
-.Bl -tag -width "Bit Value" -compact
-.It Sy "Bit Value"
-.Sy Meaning
-.It 0x1
-Spare capacity below threshold
-.It 0x2
-Temperature outside acceptable range
-.It 0x4
-Reliability of media degraded
-.It 0x8
-Media placed into read-only mode
-.It 0x10
-Volatime memory backup failure
-.It 0x20
-Persistent memory read-only or degraded
+.Bl -column "Bit Value" "Meaning" -compact
+.Sy "Bit Value" Ta Sy "Meaning"
+.It 0x1 Ta Spare capacity below threshold
+.It 0x2 Ta Temperature outside acceptable range
+.It 0x4 Ta Reliability of media degraded
+.It 0x8 Ta Media placed into read-only mode
+.It 0x10 Ta Volatime memory backup failure
+.It 0x20 Ta Persistent memrory read-only or degraded
 .El
 .It Li nvme Ta Li controller Ta Li RESET Ta
 A controller reset event has happened.

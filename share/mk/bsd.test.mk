@@ -7,7 +7,7 @@
 
 .include <bsd.init.mk>
 
-__<bsd.test.mk>__:	.NOTMAIN
+__<bsd.test.mk>__:
 
 # Third-party software (kyua, etc) prefix.
 LOCALBASE?=	/usr/local

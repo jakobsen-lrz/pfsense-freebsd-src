@@ -2,7 +2,7 @@
 ---
 -- SPDX-License-Identifier: BSD-2-Clause-FreeBSD
 --
--- Copyright(c) 2022-2025 Baptiste Daroussin <bapt@FreeBSD.org>
+-- Copyright(c) 2022 Baptiste Daroussin <bapt@FreeBSD.org>
 
 local nuage = require("nuage")
 local ucl = require("ucl")
@@ -491,14 +491,129 @@ if line == "#cloud-config" then
 	if not obj then
 		nuage.err("error parsing cloud-config file: " .. ud)
 	end
-
-	local calls_table = pre_network_calls
-	if citype == "postnet" then
-		calls_table = post_network_calls
+	if obj.groups then
+		for n, g in pairs(obj.groups) do
+			if (type(g) == "string") then
+				local r = nuage.addgroup({name = g})
+				if not r then
+					nuage.warn("failed to add group: " .. g)
+				end
+			elseif type(g) == "table" then
+				for k, v in pairs(g) do
+					nuage.addgroup({name = k, members = v})
+				end
+			else
+				nuage.warn("invalid type: " .. type(g) .. " for users entry number " .. n)
+			end
+		end
 	end
-
-	for i = 1, #calls_table do
-		calls_table[i](obj)
+	if obj.users then
+		for n, u in pairs(obj.users) do
+			if type(u) == "string" then
+				if u == "default" then
+					nuage.adduser(default_user)
+				else
+					nuage.adduser({name = u})
+				end
+			elseif type(u) == "table" then
+				-- ignore users without a username
+				if u.name == nil then
+					goto unext
+				end
+				local homedir = nuage.adduser(u)
+				if u.ssh_authorized_keys then
+					for _, v in ipairs(u.ssh_authorized_keys) do
+						nuage.addsshkey(homedir, v)
+					end
+				end
+			else
+				nuage.warn("invalid type : " .. type(u) .. " for users entry number " .. n)
+			end
+			::unext::
+		end
+	else
+	-- default user if none are defined
+		nuage.adduser(default_user)
+	end
+	if obj.ssh_keys and type(obj.ssh_keys) == "table" then
+		for key, val in pairs(obj.ssh_keys) do
+			for keyname, keytype in key:gmatch("(%w+)_(%w+)") do
+				local sshkn = nil
+				if keytype == "public" then
+					sshkn =  "ssh_host_" .. keyname .. "_key.pub"
+				elseif keytype == "private" then
+					sshkn = "ssh_host_" .. keyname .. "_key"
+				end
+				if sshkn then
+					local sshkey, path = open_ssh_key(sshkn)
+					if sshkey then
+						sshkey:write(val .. "\n")
+						sshkey:close()
+					end
+					if keytype == "private" then
+						sys_stat.chmod(path, 384)
+					end
+				end
+			end
+		end
+	end
+	if obj.ssh_authorized_keys then
+		local homedir = nuage.adduser(default_user)
+		for _, k in ipairs(obj.ssh_authorized_keys) do
+			nuage.addsshkey(homedir, k)
+		end
+	end
+	if obj.network then
+		local ifaces = get_ifaces()
+		local network = open_config("network")
+		local routing = open_config("routing")
+		local ipv6 = {}
+		for _, v in pairs(obj.network.ethernets) do
+			if not v.match then
+				goto next
+			end
+			if not v.match.macaddress then
+				goto next
+			end
+			if not ifaces[v.match.macaddress] then
+				nuage.warn("not interface matching: " .. v.match.macaddress)
+				goto next
+			end
+			local interface = ifaces[v.match.macaddress]
+			if v.dhcp4 then
+				network:write("ifconfig_" .. interface .. '="DHCP"\n')
+			elseif v.addresses then
+				for _, a in pairs(v.addresses) do
+					if a:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)") then
+						network:write("ifconfig_" .. interface .. '="inet ' .. a .. '"\n')
+					else
+						network:write("ifconfig_" .. interface .. '_ipv6="inet6 ' .. a .. '"\n')
+						ipv6[#ipv6 + 1] = interface
+					end
+				end
+			end
+			if v.gateway4 then
+				routing:write('defaultrouter="' .. v.gateway4 .. '"\n')
+			end
+			if v.gateway6 then
+				routing:write('ipv6_defaultrouter="' .. v.gateway6 .. '"\n')
+				routing:write("ipv6_route_" .. interface .. '="' .. v.gateway6)
+				routing:write(" -prefixlen 128 -interface " .. interface .. '"\n')
+			end
+			::next::
+		end
+		if #ipv6 > 0 then
+			network:write('ipv6_network_interfaces="')
+			network:write(table.concat(ipv6, " ") .. '"\n')
+			network:write('ipv6_default_interface="' .. ipv6[1] .. '"\n')
+		end
+		network:close()
+		routing:close()
+	end
+else
+	local res, err = os.execute(path .. "/" .. ud)
+	if not res then
+		nuage.err("error executing user-data script: " .. err)
 	end
 elseif line:sub(1, 2) == "#!" then
 	-- delay for execution at rc.local time --

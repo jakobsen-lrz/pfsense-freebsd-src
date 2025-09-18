@@ -1,4 +1,4 @@
-# $NetBSD: cmd-errors-lint.mk,v 1.8 2025/06/28 22:39:28 rillig Exp $
+# $NetBSD: cmd-errors-lint.mk,v 1.6 2024/08/29 20:20:35 rillig Exp $
 #
 # Demonstrate how errors in expressions affect whether the commands
 # are actually executed.
@@ -24,7 +24,7 @@ unclosed-modifier:
 	: $@ ${UNCLOSED:
 
 unknown-modifier:
-# expect: make: Unknown modifier ":Z"
+# expect: make: Unknown modifier "Z"
 # expect-not: : unknown-modifier
 	: $@ ${UNKNOWN:Z}
 

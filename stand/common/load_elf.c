@@ -30,8 +30,11 @@
 #include <sys/exec.h>
 #include <sys/linker.h>
 #include <sys/module.h>
+#include <sys/stdint.h>
+#include <string.h>
 #include <machine/elf.h>
 #include <stand.h>
+#include <sys/link_elf.h>
 
 #include "bootstrap.h"
 #include "modinfo.h"

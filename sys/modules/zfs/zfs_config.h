@@ -721,9 +721,6 @@
 /* generic_copy_file_range() is available */
 /* #undef HAVE_VFS_GENERIC_COPY_FILE_RANGE */
 
-/* migratepage exists */
-/* #undef HAVE_VFS_MIGRATEPAGE */
-
 /* migrate_folio exists */
 /* #undef HAVE_VFS_MIGRATE_FOLIO */
 
@@ -783,9 +780,6 @@
 /* Define if you have [z] */
 #define HAVE_ZLIB 1
 
-/* libunwind is llvm libunwind */
-/* #undef IS_LIBUNWIND_LLVM */
-
 /* kernel exports FPU functions */
 /* #undef KERNEL_EXPORTS_X86_FPU */
 
@@ -840,7 +834,7 @@
 /* #undef ZFS_DEVICE_MINOR */
 
 /* Define the project alias string. */
-#define ZFS_META_ALIAS "zfs-2.3.99-571-FreeBSD_ga9410ccbd"
+#define ZFS_META_ALIAS "zfs-2.3.99-263-FreeBSD_g4abc21b28"
 
 /* Define the project author. */
 #define ZFS_META_AUTHOR "OpenZFS"
@@ -849,7 +843,7 @@
 /* #undef ZFS_META_DATA */
 
 /* Define the maximum compatible kernel version. */
-#define ZFS_META_KVER_MAX "6.16"
+#define ZFS_META_KVER_MAX "6.12"
 
 /* Define the minimum compatible kernel version. */
 #define ZFS_META_KVER_MIN "4.18"
@@ -870,7 +864,7 @@
 #define ZFS_META_NAME "zfs"
 
 /* Define the project release. */
-#define ZFS_META_RELEASE "571-FreeBSD_ga9410ccbd"
+#define ZFS_META_RELEASE "263-FreeBSD_g4abc21b28"
 
 /* Define the project version. */
 #define ZFS_META_VERSION "2.3.99"

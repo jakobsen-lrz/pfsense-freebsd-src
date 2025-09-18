@@ -75,7 +75,7 @@ distribution:
 .if ${MK_KERBEROS} != "no"
 	cd ${.CURDIR}/root; \
 	    ${INSTALL} -o ${BINOWN} -g ${BINGRP} -m 644 \
-		-T "package=runtime,config" \
+		-T "package=runtime" \
 		dot.k5login ${DESTDIR}/root/.k5login;
 .endif
 

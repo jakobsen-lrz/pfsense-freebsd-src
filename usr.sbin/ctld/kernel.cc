@@ -40,7 +40,6 @@
 #include <sys/param.h>
 #include <sys/capsicum.h>
 #include <sys/callout.h>
-#include <sys/cnv.h>
 #include <sys/ioctl.h>
 #include <sys/linker.h>
 #include <sys/module.h>
@@ -594,15 +593,20 @@ conf_new_from_kernel(struct kports &kports)
 		cl->set_size(lun.size_blocks * lun.blocksize);
 		cl->set_ctl_lun(lun.lun_id);
 
-		for (const auto &pair : lun.attr_list) {
-			const char *key = pair.first.c_str();
-			const char *value = pair.second.c_str();
-			if (pair.first == "file" || pair.first == "dev") {
-				cl->set_path(value);
+		cookie = NULL;
+		while ((key = nvlist_next(lun->attr_list, NULL, &cookie)) !=
+		    NULL) {
+			if (strcmp(key, "file") == 0 ||
+			    strcmp(key, "dev") == 0) {
+				cl->l_path = nvlist_take_string(lun->attr_list,
+				    key);
 				continue;
 			}
-			if (!cl->add_option(key, value))
-				log_warnx("unable to add CTL lun option "
+			nvlist_add_string(cl->l_options, key,
+			    nvlist_get_string(lun->attr_list, key));
+			error = nvlist_error(cl->l_options);
+			if (error != 0)
+				log_warnc(error, "unable to add CTL lun option "
 				    "%s for CTL lun %ju \"%s\"",
 				    key, (uintmax_t)lun.lun_id,
 				    cl->name());

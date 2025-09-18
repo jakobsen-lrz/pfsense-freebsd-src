@@ -5128,6 +5128,9 @@ iwx_phy_ctxt_cmd(struct iwx_softc *sc, struct iwx_phy_ctxt *ctxt,
 static int
 iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
 {
+#ifdef IWX_DEBUG
+        iwx_bbl_add_entry(hcmd->id, IWX_BBL_CMD_TX, ticks);
+#endif
 	struct iwx_tx_ring *ring = &sc->txq[IWX_DQA_CMD_QUEUE];
 	struct iwx_tfh_tfd *desc;
 	struct iwx_tx_data *txdata;
@@ -5731,6 +5734,9 @@ iwx_tx(struct iwx_softc *sc, struct mbuf *m, struct ieee80211_node *ni)
 		memcpy(tx->hdr, wh, hdrlen);
 		txcmd_size = sizeof(*tx);
 	}
+#if IWX_DEBUG
+	iwx_bbl_add_entry(totlen, IWX_BBL_PKT_TX, ticks);
+#endif
 
 	/* Trim 802.11 header. */
 	m_adj(m, hdrlen);
@@ -8576,6 +8582,9 @@ iwx_watchdog(void *arg)
 			if (--sc->sc_tx_timer[i] == 0) {
 				printf("%s: device timeout\n", DEVNAME(sc));
 
+				if (sc->sc_debug)
+					iwx_bbl_print_log();
+
 				iwx_nic_error(sc);
 				iwx_dump_driver_status(sc);
 				ieee80211_restart_all(ic);
@@ -8900,7 +8909,9 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf *ml)
 
 		if (!iwx_rx_pkt_valid(pkt))
 			break;
-
+#ifdef IWX_DEBUG
+        iwx_bbl_add_entry(pkt->hdr.code, IWX_BBL_CMD_RX, ticks);
+#endif
 		/*
 		 * XXX Intel inside (tm)
 		 * Any commands in the LONG_GROUP could actually be in the
@@ -9513,6 +9524,7 @@ iwx_intr_msix(void *arg)
 	    (inta_hw & IWX_MSIX_HW_INT_CAUSES_REG_SW_ERR) ||
 	    (inta_hw & IWX_MSIX_HW_INT_CAUSES_REG_SW_ERR_V2)) {
 		if (sc->sc_debug) {
+			iwx_bbl_print_log();
 			iwx_nic_error(sc);
 			iwx_dump_driver_status(sc);
 		}
@@ -10027,11 +10039,12 @@ out:
 const struct iwx_device_cfg *
 iwx_find_device_cfg(struct iwx_softc *sc)
 {
-	uint16_t sdev_id, mac_type, rf_type;
+	uint16_t mac_type, rf_type;
 	uint8_t mac_step, cdb, jacket, rf_id, no_160, cores;
 	int i;
+	uint16_t sdev_id;
 
-	sdev_id = pci_get_subdevice(sc->sc_dev);
+	sdev_id = pci_get_device(sc->sc_dev);
 	mac_type = IWX_CSR_HW_REV_TYPE(sc->sc_hw_rev);
 	mac_step = IWX_CSR_HW_REV_STEP(sc->sc_hw_rev << 2);
 	rf_type = IWX_CSR_HW_RFID_TYPE(sc->sc_hw_rf_id);

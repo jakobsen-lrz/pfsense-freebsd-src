@@ -1093,8 +1093,6 @@
         ..
         col
         ..
-        column
-        ..
         comm
         ..
         compress
@@ -1173,8 +1171,6 @@
         ..
         m4
         ..
-        mail
-        ..
         mkimg
         ..
         mktemp
@@ -1218,8 +1214,6 @@
         tail
         ..
         tar
-        ..
-        tee
         ..
         tftp
         ..
@@ -1288,10 +1282,6 @@
         sa
         ..
         syslogd
-        ..
-        sysrc
-        ..
-        traceroute
         ..
     ..
 ..

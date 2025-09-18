@@ -315,6 +315,83 @@ fixpt_t ccpu_exp[] = {
 
 #define	CCPU_EXP_MAX	110
 
+/*
+ * This function is analogical to the getpcpu() function in the ps(1) command.
+ * They should both calculate in the same way so that the racct %cpu
+ * calculations are consistent with the values showed by the ps(1) tool.
+ * The calculations are more complex in the 4BSD scheduler because of the value
+ * of the ccpu variable.  In ULE it is defined to be zero which saves us some
+ * work.
+ */
+static uint64_t
+racct_getpcpu(struct proc *p, u_int pcpu)
+{
+	u_int swtime;
+#ifdef SCHED_4BSD
+	fixpt_t pctcpu, pctcpu_next;
+#endif
+#ifdef SMP
+	struct pcpu *pc;
+	int found;
+#endif
+	fixpt_t p_pctcpu;
+	struct thread *td;
+
+	ASSERT_RACCT_ENABLED();
+
+	swtime = (ticks - p->p_swtick) / hz;
+
+	/*
+	 * For short-lived processes, the sched_pctcpu() returns small
+	 * values even for cpu intensive processes.  Therefore we use
+	 * our own estimate in this case.
+	 */
+	if (swtime < RACCT_PCPU_SECS)
+		return (pcpu);
+
+	p_pctcpu = 0;
+	FOREACH_THREAD_IN_PROC(p, td) {
+		if (td == PCPU_GET(idlethread))
+			continue;
+#ifdef SMP
+		found = 0;
+		STAILQ_FOREACH(pc, &cpuhead, pc_allcpu) {
+			if (td == pc->pc_idlethread) {
+				found = 1;
+				break;
+			}
+		}
+		if (found)
+			continue;
+#endif
+		thread_lock(td);
+#ifdef SCHED_4BSD
+		pctcpu = sched_pctcpu(td);
+		/* Count also the yet unfinished second. */
+		pctcpu_next = (pctcpu * ccpu_exp[1]) >> FSHIFT;
+		pctcpu_next += sched_pctcpu_delta(td);
+		p_pctcpu += max(pctcpu, pctcpu_next);
+#else
+		/*
+		 * In ULE the %cpu statistics are updated on every
+		 * sched_pctcpu() call.  So special calculations to
+		 * account for the latest (unfinished) second are
+		 * not needed.
+		 */
+		p_pctcpu += sched_pctcpu(td);
+#endif
+		thread_unlock(td);
+	}
+
+#ifdef SCHED_4BSD
+	if (swtime <= CCPU_EXP_MAX)
+		return ((100 * (uint64_t)p_pctcpu * 1000000) /
+		    (FSCALE - ccpu_exp[swtime]));
+#endif
+
+	return ((100 * (uint64_t)p_pctcpu * 1000000) / FSCALE);
+}
+
 static void
 racct_add_racct(struct racct *dest, const struct racct *src)
 {
@@ -1253,12 +1330,9 @@ racctd(void)
 
 		FOREACH_PROC_IN_SYSTEM(p) {
 			PROC_LOCK(p);
-			if (p == idle) {
-				PROC_UNLOCK(p);
-				continue;
-			}
-			if (p->p_state != PRS_NORMAL ||
-			    (p->p_flag & P_IDLEPROC) != 0) {
+			if (p->p_state != PRS_NORMAL) {
+				if (p->p_state == PRS_ZOMBIE)
+					racct_set(p, RACCT_PCTCPU, 0);
 				PROC_UNLOCK(p);
 				continue;
 			}

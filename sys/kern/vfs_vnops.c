@@ -40,37 +40,44 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/cdefs.h>
 #include "opt_hwpmc_hooks.h"
 #include "opt_hwt_hooks.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/buf.h>
 #include <sys/disk.h>
-#include <sys/dirent.h>
 #include <sys/fail.h>
 #include <sys/fcntl.h>
 #include <sys/file.h>
-#include <sys/filio.h>
-#include <sys/inotify.h>
+#include <sys/kdb.h>
 #include <sys/ktr.h>
-#include <sys/ktrace.h>
+#include <sys/stat.h>
+#include <sys/priv.h>
+#include <sys/proc.h>
 #include <sys/limits.h>
 #include <sys/lock.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/mutex.h>
 #include <sys/namei.h>
-#include <sys/priv.h>
-#include <sys/prng.h>
-#include <sys/proc.h>
+#include <sys/vnode.h>
+#include <sys/dirent.h>
+#include <sys/bio.h>
+#include <sys/buf.h>
+#include <sys/filio.h>
+#include <sys/resourcevar.h>
 #include <sys/rwlock.h>
+#include <sys/prng.h>
+#include <sys/sx.h>
 #include <sys/sleepqueue.h>
-#include <sys/stat.h>
 #include <sys/sysctl.h>
+#include <sys/ttycom.h>
+#include <sys/conf.h>
+#include <sys/syslog.h>
 #include <sys/unistd.h>
 #include <sys/user.h>
-#include <sys/vnode.h>
+#include <sys/ktrace.h>
 
 #include <security/audit/audit.h>
 #include <security/mac/mac_framework.h>
@@ -206,10 +213,11 @@ open2nameif(int fmode, u_int vn_open_flags, uint64_t cn_flags)
 		res |= OPENREAD;
 	if ((fmode & FWRITE) != 0)
 		res |= OPENWRITE;
-	if ((fmode & O_NAMEDATTR) != 0)
-		res |= OPENNAMED | CREATENAMED;
-	if ((fmode & O_NOFOLLOW) != 0)
-		res &= ~FOLLOW;
+	if ((fmode & O_NAMEDATTR) != 0) {
+		res |= OPENNAMED;
+		if ((fmode & O_CREAT) != 0)
+			res |= CREATENAMED;
+	}
 	if ((vn_open_flags & VN_OPEN_NOAUDIT) == 0)
 		res |= AUDITVNODE1;
 	else
@@ -220,25 +228,6 @@ open2nameif(int fmode, u_int vn_open_flags, uint64_t cn_flags)
 		res |= WANTIOCTLCAPS;
 
 	return (res);
-}
-
-/*
- * For the O_NAMEDATTR case, check for a valid use of it.
- */
-static int
-vfs_check_namedattr(struct vnode *vp)
-{
-	int error;
-	short irflag;
-
-	error = 0;
-	irflag = vn_irflag_read(vp);
-	if ((vp->v_mount->mnt_flag & MNT_NAMEDATTR) == 0 ||
-	    ((irflag & VIRF_NAMEDATTR) != 0 && vp->v_type != VREG))
-		error = EINVAL;
-	else if ((irflag & (VIRF_NAMEDDIR | VIRF_NAMEDATTR)) == 0)
-		error = ENOATTR;
-	return (error);
 }
 
 /*
@@ -287,13 +276,18 @@ restart:
 		if ((error = namei(ndp)) != 0)
 			return (error);
 		if (ndp->ni_vp == NULL) {
-			if ((fmode & O_NAMEDATTR) != 0 &&
-			    (ndp->ni_dvp->v_mount->mnt_flag & MNT_NAMEDATTR) ==
-			    0) {
-				error = EINVAL;
-				vp = ndp->ni_dvp;
-				ndp->ni_dvp = NULL;
-				goto bad;
+			if ((fmode & O_NAMEDATTR) != 0) {
+				if ((ndp->ni_dvp->v_mount->mnt_flag &
+				     MNT_NAMEDATTR) == 0)
+					error = EINVAL;
+				else if ((vn_irflag_read(ndp->ni_dvp) &
+				     VIRF_NAMEDDIR) == 0)
+					error = ENOENT;
+				if (error != 0) {
+					vp = ndp->ni_dvp;
+					ndp->ni_dvp = NULL;
+					goto bad;
+				}
 			}
 			VATTR_NULL(vap);
 			vap->va_type = VREG;
@@ -351,7 +345,17 @@ restart:
 				goto bad;
 			}
 			if ((fmode & O_NAMEDATTR) != 0) {
-				error = vfs_check_namedattr(vp);
+				short irflag;
+
+				irflag = vn_irflag_read(vp);
+				if ((vp->v_mount->mnt_flag &
+				     MNT_NAMEDATTR) == 0 ||
+				    ((irflag & VIRF_NAMEDATTR) != 0 &&
+				    vp->v_type != VREG))
+					error = EINVAL;
+				else if ((irflag & (VIRF_NAMEDDIR |
+				    VIRF_NAMEDATTR)) == 0)
+					error = ENOATTR;
 				if (error != 0)
 					goto bad;
 			} else if (vp->v_type == VDIR) {
@@ -369,10 +373,10 @@ restart:
 		if ((error = namei(ndp)) != 0)
 			return (error);
 		vp = ndp->ni_vp;
-		if ((fmode & O_NAMEDATTR) != 0) {
-			error = vfs_check_namedattr(vp);
-			if (error != 0)
-				goto bad;
+		if ((fmode & O_NAMEDATTR) != 0 && (vp->v_mount->mnt_flag &
+		     MNT_NAMEDATTR) == 0) {
+			error = EINVAL;
+			goto bad;
 		}
 	}
 	error = vn_open_vnode(vp, fmode, cred, curthread, fp);
@@ -437,9 +441,6 @@ vn_open_vnode(struct vnode *vp, int fmode, struct ucred *cred,
 {
 	accmode_t accmode;
 	int error;
-
-	KASSERT((fmode & O_PATH) == 0 || (fmode & O_ACCMODE) == 0,
-	    ("%s: O_PATH and O_ACCMODE are mutually exclusive", __func__));
 
 	if (vp->v_type == VLNK) {
 		if ((fmode & O_PATH) == 0 || (fmode & FEXEC) != 0)

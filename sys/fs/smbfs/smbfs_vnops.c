@@ -1052,7 +1052,7 @@ smbfs_lookup(struct vop_lookup_args *ap)
 	struct smbfattr fattr, *fap;
 	struct smb_cred *scred;
 	char *name = cnp->cn_nameptr;
-	uint64_t flags = cnp->cn_flags;
+	int flags = cnp->cn_flags;
 	int nameiop = cnp->cn_nameiop;
 	int nmlen = cnp->cn_namelen;
 	int error, islastcn, isdot;

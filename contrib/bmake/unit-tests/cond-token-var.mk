@@ -1,4 +1,4 @@
-# $NetBSD: cond-token-var.mk,v 1.14 2025/06/28 22:39:28 rillig Exp $
+# $NetBSD: cond-token-var.mk,v 1.11 2025/01/11 21:21:33 rillig Exp $
 #
 # Tests for expressions in .if conditions.
 #
@@ -126,30 +126,3 @@ VAR.param=	value of VAR.param
 .endif
 
 .MAKEFLAGS: -d0
-
-
-# An expression in a comparison must not be undefined and have modifiers.
-# expect+1: Variable "UNDEF" is undefined
-.if ${UNDEF:M*}
-.  error
-.else
-.  error
-.endif
-
-# The left-hand side of a comparison must not be an undefined expression with
-# modifiers.
-# expect+1: Variable "UNDEF" is undefined
-.if ${UNDEF:M*} != ""
-.  error
-.else
-.  error
-.endif
-
-# The right-hand side of a comparison must not be an undefined expression with
-# modifiers.
-# expect+1: Variable "UNDEF" is undefined
-.if ${:U} != ${UNDEF:M*}
-.  error
-.else
-.  error
-.endif

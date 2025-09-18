@@ -106,7 +106,48 @@ conf_set_pidfile_path(const char *path)
 void
 conf_set_timeout(int timeout)
 {
-	conf->set_timeout(timeout);
+	conf->conf_timeout = timeout;
+}
+
+static bool
+_auth_group_set_type(struct auth_group *ag, const char *str)
+{
+	int type;
+
+	if (strcmp(str, "none") == 0) {
+		type = AG_TYPE_NO_AUTHENTICATION;
+	} else if (strcmp(str, "deny") == 0) {
+		type = AG_TYPE_DENY;
+	} else if (strcmp(str, "chap") == 0) {
+		type = AG_TYPE_CHAP;
+	} else if (strcmp(str, "chap-mutual") == 0) {
+		type = AG_TYPE_CHAP_MUTUAL;
+	} else {
+		if (ag->ag_name != NULL)
+			log_warnx("invalid auth-type \"%s\" for auth-group "
+			    "\"%s\"", str, ag->ag_name);
+		else
+			log_warnx("invalid auth-type \"%s\" for target "
+			    "\"%s\"", str, ag->ag_target->t_name);
+		return (false);
+	}
+
+	if (ag->ag_type != AG_TYPE_UNKNOWN && ag->ag_type != type) {
+		if (ag->ag_name != NULL) {
+			log_warnx("cannot set auth-type to \"%s\" for "
+			    "auth-group \"%s\"; already has a different "
+			    "type", str, ag->ag_name);
+		} else {
+			log_warnx("cannot set auth-type to \"%s\" for target "
+			    "\"%s\"; already has a different type",
+			    str, ag->ag_target->t_name);
+		}
+		return (false);
+	}
+
+	ag->ag_type = type;
+
+	return (true);
 }
 
 bool
@@ -351,26 +392,76 @@ target_finish(void)
 bool
 target_add_chap(const char *user, const char *secret)
 {
-	return (target->add_chap(user, secret));
+	if (target->t_auth_group != NULL) {
+		if (target->t_auth_group->ag_name != NULL) {
+			log_warnx("cannot use both auth-group and "
+			    "chap for target \"%s\"", target->t_name);
+			return (false);
+		}
+	} else {
+		target->t_auth_group = auth_group_new(conf, NULL);
+		if (target->t_auth_group == NULL)
+			return (false);
+		target->t_auth_group->ag_target = target;
+	}
+	return (auth_new_chap(target->t_auth_group, user, secret));
 }
 
 bool
 target_add_chap_mutual(const char *user, const char *secret,
     const char *user2, const char *secret2)
 {
-	return (target->add_chap_mutual(user, secret, user2, secret2));
+	if (target->t_auth_group != NULL) {
+		if (target->t_auth_group->ag_name != NULL) {
+			log_warnx("cannot use both auth-group and "
+			    "chap-mutual for target \"%s\"", target->t_name);
+			return (false);
+		}
+	} else {
+		target->t_auth_group = auth_group_new(conf, NULL);
+		if (target->t_auth_group == NULL)
+			return (false);
+		target->t_auth_group->ag_target = target;
+	}
+	return (auth_new_chap_mutual(target->t_auth_group, user, secret, user2,
+	    secret2));
 }
 
 bool
 target_add_initiator_name(const char *name)
 {
-	return (target->add_initiator_name(name));
+	if (target->t_auth_group != NULL) {
+		if (target->t_auth_group->ag_name != NULL) {
+			log_warnx("cannot use both auth-group and "
+			    "initiator-name for target \"%s\"", target->t_name);
+			return (false);
+		}
+	} else {
+		target->t_auth_group = auth_group_new(conf, NULL);
+		if (target->t_auth_group == NULL)
+			return (false);
+		target->t_auth_group->ag_target = target;
+	}
+	return (auth_name_new(target->t_auth_group, name));
 }
 
 bool
 target_add_initiator_portal(const char *addr)
 {
-	return (target->add_initiator_portal(addr));
+	if (target->t_auth_group != NULL) {
+		if (target->t_auth_group->ag_name != NULL) {
+			log_warnx("cannot use both auth-group and "
+			    "initiator-portal for target \"%s\"",
+			    target->t_name);
+			return (false);
+		}
+	} else {
+		target->t_auth_group = auth_group_new(conf, NULL);
+		if (target->t_auth_group == NULL)
+			return (false);
+		target->t_auth_group->ag_target = target;
+	}
+	return (auth_portal_new(target->t_auth_group, addr));
 }
 
 bool
@@ -400,7 +491,19 @@ target_set_auth_group(const char *name)
 bool
 target_set_auth_type(const char *type)
 {
-	return (target->set_auth_type(type));
+	if (target->t_auth_group != NULL) {
+		if (target->t_auth_group->ag_name != NULL) {
+			log_warnx("cannot use both auth-group and "
+			    "auth-type for target \"%s\"", target->t_name);
+			return (false);
+		}
+	} else {
+		target->t_auth_group = auth_group_new(conf, NULL);
+		if (target->t_auth_group == NULL)
+			return (false);
+		target->t_auth_group->ag_target = target;
+	}
+	return (_auth_group_set_type(target->t_auth_group, type));
 }
 
 bool

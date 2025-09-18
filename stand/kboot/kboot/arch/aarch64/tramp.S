@@ -99,5 +99,3 @@ tramp_size:
 	.globl	tramp_data_offset
 tramp_data_offset:
 	.long	trampoline_data-tramp
-
-	.section .note.GNU-stack,"",%progbits

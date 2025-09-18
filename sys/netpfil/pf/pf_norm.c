@@ -661,16 +661,16 @@ pf_fillup_fragment(struct pf_frnode *key, uint32_t id,
 
 	/* Non terminal fragments must have more fragments flag. */
 	if (frent->fe_off + frent->fe_len < total && !frent->fe_mff)
-		goto free_ipv6_fragment;
+		goto bad_fragment;
 
 	/* Check if we saw the last fragment already. */
 	if (!TAILQ_LAST(&frag->fr_queue, pf_fragq)->fe_mff) {
 		if (frent->fe_off + frent->fe_len > total ||
 		    (frent->fe_off + frent->fe_len == total && frent->fe_mff))
-			goto free_ipv6_fragment;
+			goto bad_fragment;
 	} else {
 		if (frent->fe_off + frent->fe_len == total && !frent->fe_mff)
-			goto free_ipv6_fragment;
+			goto bad_fragment;
 	}
 
 	/* Find neighbors for newly inserted fragment */
@@ -740,9 +740,6 @@ pf_fillup_fragment(struct pf_frnode *key, uint32_t id,
 
 	return (frag);
 
-free_ipv6_fragment:
-	if (frag->fr_node->fn_af == AF_INET)
-		goto bad_fragment;
 free_fragment:
 	/*
 	 * RFC 5722, Errata 3089:  When reassembling an IPv6 datagram, if one
@@ -1540,10 +1537,25 @@ pf_normalize_tcp_init(struct pf_pdesc *pd, struct tcphdr *th,
 	if ((tcp_get_flags(th) & TH_SYN) == 0)
 		return (0);
 
-	olen = (th->th_off << 2) - sizeof(*th);
-	if (olen < TCPOLEN_TIMESTAMP || !pf_pull_hdr(pd->m,
-	    pd->off + sizeof(*th), opts, olen, NULL, NULL, pd->af))
-		return (0);
+	if (th->th_off > (sizeof(struct tcphdr) >> 2) && src->scrub &&
+	    pf_pull_hdr(pd->m, pd->off, hdr, th->th_off << 2, NULL, NULL, pd->af)) {
+		/* Diddle with TCP options */
+		int hlen;
+		opt = hdr + sizeof(struct tcphdr);
+		hlen = (th->th_off << 2) - sizeof(struct tcphdr);
+		while (hlen >= TCPOLEN_TIMESTAMP) {
+			switch (*opt) {
+			case TCPOPT_EOL:	/* FALLTHROUGH */
+			case TCPOPT_NOP:
+				opt++;
+				hlen--;
+				break;
+			case TCPOPT_TIMESTAMP:
+				if (opt[1] >= TCPOLEN_TIMESTAMP) {
+					src->scrub->pfss_flags |=
+					    PFSS_TIMESTAMP;
+					src->scrub->pfss_ts_mod =
+					    htonl(arc4random());
 
 	opt = opts;
 	while ((opt = pf_find_tcpopt(opt, opts, olen,
@@ -1662,8 +1674,46 @@ pf_normalize_tcp_stateful(struct pf_pdesc *pd,
 					pf_print_state(state);
 					printf("\n");
 				}
-				REASON_SET(reason, PFRES_TS);
-				return (PF_DROP);
+				if (opt[1] >= TCPOLEN_TIMESTAMP) {
+					memcpy(&tsval, &opt[2],
+					    sizeof(u_int32_t));
+					if (tsval && src->scrub &&
+					    (src->scrub->pfss_flags &
+					    PFSS_TIMESTAMP)) {
+						tsval = ntohl(tsval);
+						pf_patch_32_unaligned(pd->m,
+						    &th->th_sum,
+						    &opt[2],
+						    htonl(tsval +
+						    src->scrub->pfss_ts_mod),
+						    PF_ALGNMNT(startoff),
+						    0);
+						copyback = 1;
+					}
+
+					/* Modulate TS reply iff valid (!0) */
+					memcpy(&tsecr, &opt[6],
+					    sizeof(u_int32_t));
+					if (tsecr && dst->scrub &&
+					    (dst->scrub->pfss_flags &
+					    PFSS_TIMESTAMP)) {
+						tsecr = ntohl(tsecr)
+						    - dst->scrub->pfss_ts_mod;
+						pf_patch_32_unaligned(pd->m,
+						    &th->th_sum,
+						    &opt[6],
+						    htonl(tsecr),
+						    PF_ALGNMNT(startoff),
+						    0);
+						copyback = 1;
+					}
+					got_ts = 1;
+				}
+				/* FALLTHROUGH */
+			default:
+				hlen -= MAX(opt[1], 2);
+				opt += MAX(opt[1], 2);
+				break;
 			}
 
 			memcpy(&tsval, ts, sizeof(u_int32_t));
@@ -1978,20 +2028,36 @@ pf_normalize_mss(struct pf_pdesc *pd)
 	    !pf_pull_hdr(pd->m, optsoff, opts, olen, NULL, NULL, pd->af))
 		return (0);
 
-	opt = opts;
-	while ((opt = pf_find_tcpopt(opt, opts, olen,
-	    TCPOPT_MAXSEG, TCPOLEN_MAXSEG)) != NULL) {
-		uint16_t	 mss;
-		uint8_t		*mssp = opt + 2;
-		memcpy(&mss, mssp, sizeof(mss));
-		if (ntohs(mss) > pd->act.max_mss) {
-			size_t mssoffopts = mssp - opts;
-			pf_patch_16(pd, &mss,
-			    htons(pd->act.max_mss), PF_ALGNMNT(mssoffopts));
-			m_copyback(pd->m, optsoff + mssoffopts,
-			    sizeof(mss), (caddr_t)&mss);
-			m_copyback(pd->m, pd->off,
-			    sizeof(struct tcphdr), (caddr_t)&pd->hdr.tcp);
+	for (; cnt > 0; cnt -= optlen, optp += optlen) {
+		startoff = optp - opts;
+		opt = optp[0];
+		if (opt == TCPOPT_EOL)
+			break;
+		if (opt == TCPOPT_NOP)
+			optlen = 1;
+		else {
+			if (cnt < 2)
+				break;
+			optlen = optp[1];
+			if (optlen < 2 || optlen > cnt)
+				break;
+		}
+		switch (opt) {
+		case TCPOPT_MAXSEG:
+			mss = (u_int16_t *)(optp + 2);
+			if ((ntohs(*mss)) > pd->act.max_mss) {
+				pf_patch_16_unaligned(pd->m,
+				    &th->th_sum,
+				    mss, htons(pd->act.max_mss),
+				    PF_ALGNMNT(startoff),
+				    0);
+				m_copyback(pd->m, pd->off + sizeof(*th),
+				    thoff - sizeof(*th), opts);
+				m_copyback(pd->m, pd->off, sizeof(*th), (caddr_t)th);
+			}
+			break;
+		default:
+			break;
 		}
 
 		opt += opt[1];
