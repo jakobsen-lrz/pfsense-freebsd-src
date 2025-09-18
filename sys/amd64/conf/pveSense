@@ -1,0 +1,91 @@
+include pfSense
+
+
+
+# Removing Wireless Drivers
+nooptions       IEEE80211_DEBUG
+nodevice        wlan_gcmp
+
+nodevice        wlan_rssadapt
+nodevice        wlan_xauth
+nodevice        wlan_acl
+nodevice        iwm
+nodevice        iwifw
+nodevice        ipwfw
+nodevice        wpifw
+nodevice        iwnfw
+nodevice        uath
+nodevice        ralfw
+nodevice        ural
+nodevice        urtw
+nodevice        rum
+nodevice        mwlfw
+nodevice        zyd
+nodevice        upgt
+nodevice        udav
+nodevice        axe
+nodevice        axge
+nodevice        aue
+nodevice        cue
+nodevice        igc
+nodevice        kue
+nodevice        mos
+nodevice        rsu
+nodevice        rsufw
+nodevice        rtwn
+nodevice        rtwnfw
+nodevice        rtwn_pci
+nodevice        rtwn_usb
+nodevice        run
+nodevice        runfw
+nodevice        rue
+nodevice        bwn
+nodevice        bwi
+
+# Removing 3G Drivers
+nodevice        ufoma
+nodevice        ucom
+nodevice        uslcom
+nodevice        umct
+nodevice        uvisor
+nodevice        uark
+nodevice        uftdi
+nodevice        uvscom
+nodevice        umodem
+nodevice        u3g
+nodevice        cdce
+
+
+
+# Removing some ethernet drivers explicitly
+nodevice        kue
+nodevice        mos
+
+nodevice        mxge
+nodevice        cxgb
+nodevice        cxlv
+nodevice        cxgbe
+nodevice        cxgbev
+nodevice        nve
+nodevice        oce
+nodevice        ccv
+
+
+# Removing some other drivers explicitly
+nodevice        osn
+nodevice        mpi3mr
+nodevice        psm
+nodevice        firewire
+nodevice        pty
+nodevice        sbp
+
+
+
+
+
+# Including some devices explicitly
+device          virtio_console
+device          vte
+device          speaker
+nooptions       USB_DEBUG
+device          uhid
