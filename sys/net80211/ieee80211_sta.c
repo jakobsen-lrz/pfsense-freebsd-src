@@ -634,10 +634,10 @@ sta_input(struct ieee80211_node *ni, struct mbuf *m,
 		 * XXX process data frames whilst scanning.
 		 */
 		if ((! IEEE80211_IS_MULTICAST(wh->i_addr1))
-		    && (! IEEE80211_ADDR_EQ(wh->i_addr1, vap->iv_myaddr))) {
+		    && (! IEEE80211_ADDR_EQ(wh->i_addr1, IF_LLADDR(ifp)))) {
 			IEEE80211_DISCARD_MAC(vap, IEEE80211_MSG_INPUT,
 			    bssid, NULL, "not to cur sta: lladdr=%6D, addr1=%6D",
-			    vap->iv_myaddr, ":", wh->i_addr1, ":");
+			    IF_LLADDR(ifp), ":", wh->i_addr1, ":");
 			vap->iv_stats.is_rx_wrongbss++;
 			goto out;
 		}
@@ -681,7 +681,7 @@ sta_input(struct ieee80211_node *ni, struct mbuf *m,
 		}
 	resubmit_ampdu:
 		if (dir == IEEE80211_FC1_DIR_FROMDS) {
-			if (ieee80211_vap_ifp_check_is_simplex(vap) &&
+			if ((ifp->if_flags & IFF_SIMPLEX) &&
 			    isfromds_mcastecho(vap, wh)) {
 				/*
 				 * In IEEE802.11 network, multicast
@@ -716,7 +716,7 @@ sta_input(struct ieee80211_node *ni, struct mbuf *m,
 				vap->iv_stats.is_rx_wrongdir++;
 				goto out;
 			}
-			if (ieee80211_vap_ifp_check_is_simplex(vap) &&
+			if ((ifp->if_flags & IFF_SIMPLEX) &&
 			    isdstods_mcastecho(vap, wh)) {
 				/*
 				 * In IEEE802.11 network, multicast
@@ -972,8 +972,7 @@ sta_input(struct ieee80211_node *ni, struct mbuf *m,
 	case IEEE80211_FC0_TYPE_CTL:
 		vap->iv_stats.is_rx_ctl++;
 		IEEE80211_NODE_STAT(ni, rx_ctrl);
-		if (ieee80211_is_ctl_frame_for_vap(ni, m))
-			vap->iv_recv_ctl(ni, m, subtype);
+		vap->iv_recv_ctl(ni, m, subtype);
 		goto out;
 
 	default:
@@ -2055,7 +2054,6 @@ sta_recv_mgmt(struct ieee80211_node *ni, struct mbuf *m0, int subtype,
 static void
 sta_recv_ctl(struct ieee80211_node *ni, struct mbuf *m, int subtype)
 {
-
 	switch (subtype) {
 	case IEEE80211_FC0_SUBTYPE_BAR:
 		ieee80211_recv_bar(ni, m);

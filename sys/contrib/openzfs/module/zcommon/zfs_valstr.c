@@ -39,9 +39,7 @@
  */
 typedef struct {
 	const char	vb_bit;
-
-	/* 2 byte name + 1 byte NULL terminator to make GCC happy */
-	const char	vb_pair[3];
+	const char	vb_pair[2];
 	const char	*vb_name;
 } valstr_bit_t;
 

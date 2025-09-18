@@ -11,16 +11,21 @@ CONFS=	DAEMON \
 	SERVERS \
 	adjkerntz \
 	bgfsck \
+	${_blacklistd} \
 	bridge \
 	cfumass \
 	cleanvar \
 	cleartmp \
+	ctld \
 	ddb \
 	defaultroute \
 	devfs \
 	dmesg \
 	dumpon \
 	fsck \
+	geli \
+	geli2 \
+	gptboot \
 	growfs \
 	growfs_fstab \
 	hostid \
@@ -39,6 +44,7 @@ CONFS=	DAEMON \
 	linux \
 	local \
 	localpkg \
+	lockd \
 	mixer \
 	motd \
 	mountcritlocal \
@@ -46,15 +52,26 @@ CONFS=	DAEMON \
 	mountlate \
 	mdconfig \
 	mdconfig2 \
+	mountd \
 	msgs \
+	natd \
 	netif \
 	netoptions \
 	netwait \
-	noshutdown \
+	newsyslog \
+	nfsclient \
+	nfscbd \
+	nfsd \
+	nfsuserd \
+	nisdomain \
 	${_nscd} \
 	${_opensm} \
 	os-release \
+	pf \
+	pflog \
+	pfsync \
 	powerd \
+	ppp \
 	pppoed \
 	pwcheck \
 	quota \
@@ -67,9 +84,11 @@ CONFS=	DAEMON \
 	rpcbind \
 	rtadvd \
 	rtsold \
+	rwho \
 	savecore \
 	securelevel \
 	serial \
+	statd \
 	static_arp \
 	static_ndp \
 	stf \
@@ -77,9 +96,11 @@ CONFS=	DAEMON \
 	swaplate \
 	sysctl \
 	sysctl_lastload \
+	syslogd \
 	sysvipc \
 	tmp \
 	ugidfw \
+	${_utx} \
 	var \
 	var_run \
 	watchdogd
@@ -96,12 +117,6 @@ CONFGROUPS+=		DHCLIENT
 DHCLIENT=		dhclient
 DHCLIENTPACKAGE=	dhclient
 
-CONFGROUPS+=		GEOM
-GEOM=			geli \
-			geli2 \
-			gptboot
-GEOMPACKAGE=		geom
-
 CONFGROUPS+=		GGATED
 GGATED=			ggated
 GGATEDPACKAGE=		ggate
@@ -114,37 +129,20 @@ CONFGROUPS+=		CRON
 CRON+=			cron
 CRONPACKAGE=		cron
 
-CONFGROUPS+=		NFS
-NFS=			lockd \
-			mountd \
-			nfscbd \
-			nfsclient \
-			nfsd \
-			nfsuserd \
-			statd
-NFSPACKAGE=		nfs
+.if ${MK_NIS} != "no"
+CONFS+=	ypbind \
+	ypldap \
+	yppasswdd \
+	ypserv \
+	ypset \
+	ypupdated \
+	ypxfrd
+.endif
 
-CONFGROUPS+=		NEWSYSLOG
-NEWSYSLOG=		newsyslog
-NEWSYSLOGPACKAGE=	newsyslog
-
-CONFGROUPS+=		SYSLOGD
-SYSLOGD=		syslogd
-SYSLOGDPACKAGE=		syslogd
-
-CONFGROUPS+=		RCMDS
-RCMDS=			rwho
-RCMDSPACKAGE=		rcmds
-
-.if ${MK_ACCT} != "no" || ${MK_UTMPX} != "no"
-CONFGROUPS+=	ACCT
-ACCTPACKAGE=	acct
 .if ${MK_ACCT} != "no"
+CONFGROUPS+=	ACCT
 ACCT+=		accounting
-.endif
-.if ${MK_UTMPX} != "no"
-ACCT+=		utx
-.endif
+ACCTPACKAGE=	acct
 .endif
 
 .if ${MK_ACPI} != "no"
@@ -170,17 +168,13 @@ AUDITPACKAGE=	audit
 .endif
 
 .if ${MK_AUTOFS} != "no"
-CONFGROUPS+=	AUTOFS
-AUTOFS=		automount \
-		automountd \
-		autounmountd
-AUTOFSPACKAGE=	autofs
+CONFS+=		automount
+CONFS+=		automountd
+CONFS+=		autounmountd
 .endif
 
 .if ${MK_BLACKLIST} != "no"
-CONFGROUPS+=	BLOCKLIST
-BLOCKLIST=	blacklistd
-BLOCKLISTPACKAGE=blocklist
+_blacklistd+=	blacklistd
 .endif
 
 .if ${MK_BLUETOOTH} != "no"
@@ -205,15 +199,11 @@ BSNMPPACKAGE=	bsnmp
 .endif
 
 .if ${MK_CCD} != "no"
-CONFGROUPS+=	CCD
-CCD=		ccd
-CCDPACKAGE=	ccdconfig
+CONFS+=		ccd
 .endif
 
 .if ${MK_FTP} != "no"
-CONFGROUPS+=	FTPD
-FTPD=		ftpd
-FTPDPACKAGE=	ftpd
+CONFS+=		ftpd
 .endif
 
 .if ${MK_GSSAPI} != "no"
@@ -229,41 +219,28 @@ HASTPACKAGE=	hast
 .endif
 
 .if ${MK_INETD} != "no"
-CONFGROUPS+=	INETD
-INETD=		inetd
-INETDPACKAGE=	inetd
+CONFS+=		inetd
 .endif
 
 .if ${MK_IPFILTER} != "no"
-CONFGROUPS+=	IPF
-IPF=		ipfilter \
-		ipfs \
-		ipmon \
-		ipnat \
-		ippool
-IPFPACKAGE=	ipf
+CONFS+=	ipfilter \
+	ipfs \
+	ipmon \
+	ipnat \
+	ippool
 .endif
 
 .if ${MK_IPFW} != "no"
-CONFGROUPS+=	IPFW
-IPFW=		ipfw dnctl
+CONFS+=		ipfw \
+		dnctl
 .if ${MK_NETGRAPH} != "no"
-IPFW+=		ipfw_netflow
+CONFS+=		ipfw_netflow
 .endif
-IPFWPACKAGE=	ipfw
-
-# natd is only built when ipfw is built
-CONFGROUPS+=	NATD
-NATD+=		natd
-NATDPACKAGE=	natd
 .endif
 
 .if ${MK_ISCSI} != "no"
-CONFGROUPS+=	ISCSI
-ISCSI=		iscsictl	\
-		iscsid		\
-		ctld
-ISCSIPACKAGE=	iscsi
+CONFS+=		iscsictl
+CONFS+=		iscsid
 .endif
 
 .if ${MK_JAIL} != "no"
@@ -298,19 +275,6 @@ VAR_HEMIDAL=	/var/heimdal
 VAR_HEMIDAL_MODE=	700
 .endif
 
-.if ${MK_NIS} != "no"
-CONFGROUPS+=	YP
-YP=		ypbind \
-		ypldap \
-		yppasswdd \
-		ypserv \
-		ypset \
-		ypupdated \
-		ypxfrd \
-		nisdomain
-YPPACKAGE=	yp
-.endif
-
 .if ${MK_NS_CACHING} != "no"
 _nscd=		nscd
 .endif
@@ -326,9 +290,12 @@ NTPPACKAGE=	ntp
 _opensm=	opensm
 .endif
 
-.if ${MK_OPENSSL} != "no" && ${MK_OPENSSL_KTLS} != "no"
+.if ${MK_OPENSSL} != "no"
+CONFS+=		keyserv
+.if ${MK_OPENSSL_KTLS} != "no"
 CONFS+=		tlsclntd \
 		tlsservd
+.endif
 .endif
 
 .if ${MK_OPENSSH} != "no"
@@ -338,18 +305,7 @@ SSHPACKAGE=	ssh
 .endif
 
 .if ${MK_PF} != "no"
-CONFGROUPS+=	PF
-PF=		pf \
-		pflog \
-		pfsync \
-		ftp-proxy
-PFPACKAGE=	pf
-.endif
-
-.if ${MK_PPP} != "no"
-CONFGROUPS+=	PPP
-PPP=		ppp
-PPPPACKAGE=	ppp
+CONFS+=		ftp-proxy
 .endif
 
 .if ${MK_ROUTED} != "no"
@@ -374,6 +330,10 @@ UNBOUND+=	local_unbound
 UNBOUNDPACKAGE=	unbound
 .endif
 
+.if ${MK_UTMPX} != "no"
+_utx=		utx
+.endif
+
 .if ${MK_VI} != "no"
 CONFGROUPS+=	VI
 VI+=		virecover
@@ -381,13 +341,8 @@ VIPACKAGE=	vi
 .endif
 
 .if ${MK_WIRELESS} != "no"
-CONFGROUPS+=	HOSTAPD
-HOSTAPD=	hostapd
-HOSTAPDPACKAGE=	hostapd
-
-CONFGROUPS+=	WPA
-WPA=		wpa_supplicant
-WPAPACKAGE=	wpa
+CONFS+=		hostapd
+CONFS+=		wpa_supplicant
 .endif
 
 .if ${MK_ZFS} != "no"
@@ -400,7 +355,7 @@ ZFS+=		zpool
 ZFS+=		zpoolreguid
 ZFS+=		zpoolupgrade
 ZFS+=		zvol
-ZFSPACKAGE=	zfs
+ZFSPACKAGE=	rc
 .endif
 
 .for fg in ${CONFGROUPS}

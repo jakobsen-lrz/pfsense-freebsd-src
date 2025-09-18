@@ -40,7 +40,7 @@ DIRDEPS_FILTER.host = \
 # since they are never installed.
 
 # Cheat for including src.libnames.mk
-__<bsd.init.mk>__:	.NOTMAIN
+__<bsd.init.mk>__:
 # Pull in _INTERNALLIBS
 .include <src.libnames.mk>
 

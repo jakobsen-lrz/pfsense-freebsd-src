@@ -4,7 +4,7 @@
 
 LIB=	tpool
 LIBADD=	spl
-PACKAGE=	libzfs
+PACKAGE=	zfs
 
 INCS=	thread_pool_impl.h
 SRCS=	thread_pool.c

@@ -930,10 +930,12 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 	}
 
 	if (tid == 0) {
-		if ((p->p_flag & P_STOPPED_TRACE) != 0)
+		if ((p->p_flag & P_STOPPED_TRACE) != 0) {
+			KASSERT(p->p_xthread != NULL, ("NULL p_xthread"));
 			td2 = p->p_xthread;
-		if (td2 == NULL)
+		} else {
 			td2 = FIRST_THREAD_IN_PROC(p);
+		}
 		tid = td2->td_tid;
 	}
 
@@ -1320,19 +1322,16 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 
 		/*
 		 * Clear the pending event for the thread that just
-		 * reported its event (p_xthread), if any.  This may
-		 * not be the thread passed to PT_CONTINUE, PT_STEP,
-		 * etc. if the debugger is resuming a different
-		 * thread.  There might be no reporting thread if
-		 * the process was just attached.
+		 * reported its event (p_xthread).  This may not be
+		 * the thread passed to PT_CONTINUE, PT_STEP, etc. if
+		 * the debugger is resuming a different thread.
 		 *
 		 * Deliver any pending signal via the reporting thread.
 		 */
-		if (p->p_xthread != NULL) {
-			p->p_xthread->td_dbgflags &= ~TDB_XSIG;
-			p->p_xthread->td_xsig = data;
-			p->p_xthread = NULL;
-		}
+		MPASS(p->p_xthread != NULL);
+		p->p_xthread->td_dbgflags &= ~TDB_XSIG;
+		p->p_xthread->td_xsig = data;
+		p->p_xthread = NULL;
 		p->p_xsig = data;
 
 		/*

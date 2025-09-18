@@ -29,7 +29,7 @@
 #
 
 .if !target(__<src.opts.mk>__)
-__<src.opts.mk>__:	.NOTMAIN
+__<src.opts.mk>__:
 
 .include <bsd.own.mk>
 

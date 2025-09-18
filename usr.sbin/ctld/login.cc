@@ -1003,8 +1003,12 @@ login(struct ctld_connection *conn)
 	} else {
 		assert(conn->conn_session_type == CONN_SESSION_TYPE_DISCOVERY);
 		ag = pg->pg_discovery_auth_group;
-		log_debugx("initiator requests discovery session; %s",
-		    ag->ag_label);
+		if (ag->ag_name != NULL) {
+			log_debugx("initiator requests "
+			    "discovery session; auth-group \"%s\"", ag->ag_name);
+		} else {
+			log_debugx("initiator requests discovery session");
+		}
 	}
 
 	if (ag->ag_type == AG_TYPE_DENY) {

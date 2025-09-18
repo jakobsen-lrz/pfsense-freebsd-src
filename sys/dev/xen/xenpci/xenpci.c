@@ -127,9 +127,8 @@ errexit:
 static int
 xenpci_probe(device_t dev)
 {
-	uint32_t device_id = pci_get_devid(dev);
 
-	if (device_id != 0x00015853 && device_id != 0x00025853)
+	if (pci_get_devid(dev) != 0x00015853)
 		return (ENXIO);
 
 	device_set_desc(dev, "Xen Platform Device");

@@ -326,8 +326,7 @@ SET_DECLARE(Xcommand_set, struct bootblk_command);
  * The intention of the architecture switch is to provide a convenient
  * encapsulation of the interface between the bootstrap MI and MD code.
  * MD code may selectively populate the switch at runtime based on the
- * actual configuration of the target system, though some routines are
- * mandatory.
+ * actual configuration of the target system.
  */
 struct arch_switch
 {

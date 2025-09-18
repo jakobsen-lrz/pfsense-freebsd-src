@@ -225,7 +225,8 @@ sys_execve(struct thread *td, struct execve_args *uap)
 	error = pre_execve(td, &oldvmspace);
 	if (error != 0)
 		return (error);
-	error = exec_copyin_args(&args, uap->fname, uap->argv, uap->envv);
+	error = exec_copyin_args(&args, uap->fname, UIO_USERSPACE,
+	    uap->argv, uap->envv);
 	if (error == 0)
 		error = kern_execve(td, &args, NULL, oldvmspace);
 	post_execve(td, error, oldvmspace);
@@ -250,7 +251,8 @@ sys_fexecve(struct thread *td, struct fexecve_args *uap)
 	error = pre_execve(td, &oldvmspace);
 	if (error != 0)
 		return (error);
-	error = exec_copyin_args(&args, NULL, uap->argv, uap->envv);
+	error = exec_copyin_args(&args, NULL, UIO_SYSSPACE,
+	    uap->argv, uap->envv);
 	if (error == 0) {
 		args.fd = uap->fd;
 		error = kern_execve(td, &args, NULL, oldvmspace);
@@ -280,7 +282,8 @@ sys___mac_execve(struct thread *td, struct __mac_execve_args *uap)
 	error = pre_execve(td, &oldvmspace);
 	if (error != 0)
 		return (error);
-	error = exec_copyin_args(&args, uap->fname, uap->argv, uap->envv);
+	error = exec_copyin_args(&args, uap->fname, UIO_USERSPACE,
+	    uap->argv, uap->envv);
 	if (error == 0)
 		error = kern_execve(td, &args, uap->mac_p, oldvmspace);
 	post_execve(td, error, oldvmspace);
@@ -1325,7 +1328,7 @@ out:
  */
 int
 exec_copyin_args(struct image_args *args, const char *fname,
-    char **argv, char **envv)
+    enum uio_seg segflg, char **argv, char **envv)
 {
 	u_long arg, env;
 	int error;
@@ -1345,7 +1348,7 @@ exec_copyin_args(struct image_args *args, const char *fname,
 	/*
 	 * Copy the file name.
 	 */
-	error = exec_args_add_fname(args, fname, UIO_USERSPACE);
+	error = exec_args_add_fname(args, fname, segflg);
 	if (error != 0)
 		goto err_exit;
 

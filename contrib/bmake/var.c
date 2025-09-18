@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.1159 2025/04/04 18:57:01 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.1144 2025/01/11 21:21:33 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -143,7 +143,7 @@
 #endif
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.1159 2025/04/04 18:57:01 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.1144 2025/01/11 21:21:33 rillig Exp $");
 
 /*
  * Variables are defined using one of the VAR=value assignments.  Their
@@ -272,9 +272,7 @@ typedef struct SepBuf {
 
 typedef enum {
 	VSK_TARGET,
-	VSK_COMMAND,
 	VSK_VARNAME,
-	VSK_INDIRECT_MODIFIERS,
 	VSK_COND,
 	VSK_COND_THEN,
 	VSK_COND_ELSE,
@@ -385,7 +383,7 @@ EvalStack_Pop(void)
 	evalStack.len--;
 }
 
-bool
+void
 EvalStack_PrintDetails(void)
 {
 	size_t i;
@@ -393,9 +391,7 @@ EvalStack_PrintDetails(void)
 	for (i = evalStack.len; i > 0; i--) {
 		static const char descr[][42] = {
 			"in target",
-			"in command",
 			"while evaluating variable",
-			"while evaluating indirect modifiers",
 			"while evaluating condition",
 			"while evaluating then-branch of condition",
 			"while evaluating else-branch of condition",
@@ -412,7 +408,6 @@ EvalStack_PrintDetails(void)
 		    value != NULL ? "\" with value \"" : "",
 		    value != NULL ? value : "");
 	}
-	return evalStack.len > 0;
 }
 
 static Var *
@@ -1057,13 +1052,7 @@ Var_SetWithFlags(GNode *scope, const char *name, const char *val,
 			 * See ExistsInCmdline.
 			 */
 			Var *gl = VarFind(name, SCOPE_GLOBAL, false);
-			if (gl != NULL && strcmp(gl->val.data, val) == 0) {
-				DEBUG3(VAR,
-				    "%s: ignoring to override the global "
-				    "'%s = %s' from a command line variable "
-				    "as the value wouldn't change\n",
-				    scope->name, name, val);
-			} else if (gl != NULL && gl->readOnlyLoud)
+			if (gl != NULL && gl->readOnlyLoud)
 				Parse_Error(PARSE_FATAL,
 				    "Cannot override "
 				    "read-only global variable \"%s\" "
@@ -1982,6 +1971,10 @@ FormatTime(const char *fmt, time_t t, bool gmt)
  * and stores the result back in ch->expr->value via Expr_SetValueOwn or
  * Expr_SetValueRefer.
  *
+ * If evaluating fails, the fallback error message "Bad modifier" is printed.
+ * TODO: Add proper error handling to Var_Subst, Var_Parse, ApplyModifiers and
+ * ModifyWords.
+ *
  * Some modifiers such as :D and :U turn undefined expressions into defined
  * expressions using Expr_Define.
  */
@@ -2115,7 +2108,9 @@ typedef enum ApplyModifierResult {
 	AMR_OK,
 	/* Not a match, try the ':from=to' modifier as well. */
 	AMR_UNKNOWN,
-	/* Error out without further error message. */
+	/* Error out with "Bad modifier" message. */
+	AMR_BAD,
+	/* Error out without the standard error message. */
 	AMR_CLEANUP
 } ApplyModifierResult;
 
@@ -2243,15 +2238,13 @@ ParseModifierPart(
 			ParseModifierPartExpr(&p, part, ch, emode);
 	}
 
+	*pp = p;
 	if (*p != end1 && *p != end2) {
 		Parse_Error(PARSE_FATAL,
-		    "Unfinished modifier after \"%.*s\", expecting \"%c\"",
-		    (int)(p - *pp), *pp, end2);
+		    "Unfinished modifier ('%c' missing)", end2);
 		LazyBuf_Done(part);
-		*pp = p;
 		return false;
 	}
-	*pp = p;
 	if (end1 == end2)
 		(*pp)++;
 
@@ -3110,8 +3103,11 @@ ApplyModifier_ToSep(const char **pp, ModChain *ch)
 		goto ok;
 	}
 
-	if (sep[0] != '\\')
-		return AMR_UNKNOWN;
+	/* ":ts<unrecognized><unrecognized>". */
+	if (sep[0] != '\\') {
+		(*pp)++;	/* just for backwards compatibility */
+		return AMR_BAD;
+	}
 
 	/* ":ts\n" */
 	if (sep[1] == 'n') {
@@ -3135,16 +3131,20 @@ ApplyModifier_ToSep(const char **pp, ModChain *ch)
 		if (sep[1] == 'x') {
 			base = 16;
 			p++;
-		} else if (!ch_isdigit(sep[1]))
-			return AMR_UNKNOWN;	/* ":ts\..." */
+		} else if (!ch_isdigit(sep[1])) {
+			(*pp)++;	/* just for backwards compatibility */
+			return AMR_BAD;	/* ":ts<backslash><unrecognized>". */
+		}
 
 		if (!TryParseChar(&p, base, &ch->sep)) {
 			Parse_Error(PARSE_FATAL,
 			    "Invalid character number at \"%s\"", p);
 			return AMR_CLEANUP;
 		}
-		if (!IsDelimiter(*p, ch))
-			return AMR_UNKNOWN;
+		if (!IsDelimiter(*p, ch)) {
+			(*pp)++;	/* just for backwards compatibility */
+			return AMR_BAD;
+		}
 
 		*pp = p;
 	}
@@ -3197,14 +3197,18 @@ ApplyModifier_To(const char **pp, ModChain *ch)
 	const char *mod = *pp;
 	assert(mod[0] == 't');
 
-	if (IsDelimiter(mod[1], ch))
-		return AMR_UNKNOWN;		/* ":t<endc>" or ":t:" */
+	if (IsDelimiter(mod[1], ch)) {
+		*pp = mod + 1;
+		return AMR_BAD;	/* Found ":t<endc>" or ":t:". */
+	}
 
 	if (mod[1] == 's')
 		return ApplyModifier_ToSep(pp, ch);
 
-	if (!IsDelimiter(mod[2], ch))
-		return AMR_UNKNOWN;
+	if (!IsDelimiter(mod[2], ch)) {			/* :t<any><any> */
+		*pp = mod + 1;
+		return AMR_BAD;
+	}
 
 	if (mod[1] == 'A') {				/* :tA */
 		*pp = mod + 2;
@@ -3239,7 +3243,9 @@ ApplyModifier_To(const char **pp, ModChain *ch)
 		return AMR_OK;
 	}
 
-	return AMR_UNKNOWN;		/* ":t<any>:" or ":t<any><endc>" */
+	/* Found ":t<unrecognized>:" or ":t<unrecognized><endc>". */
+	*pp = mod + 1;		/* XXX: unnecessary but observable */
+	return AMR_BAD;
 }
 
 /* :[#], :[1], :[-1..1], etc. */
@@ -3259,12 +3265,8 @@ ApplyModifier_Words(const char **pp, ModChain *ch)
 	arg = LazyBuf_DoneGet(&argBuf);
 	p = arg.str;
 
-	if (!IsDelimiter(**pp, ch)) {
-		Parse_Error(PARSE_FATAL,
-		    "Extra text after \"[%s]\"", arg.str);
-		FStr_Done(&arg);
-		return AMR_CLEANUP;
-	}
+	if (!IsDelimiter(**pp, ch))
+		goto bad_modifier;		/* Found junk after ']' */
 
 	if (!ModChain_ShouldEval(ch))
 		goto ok;
@@ -3329,9 +3331,8 @@ ok:
 	return AMR_OK;
 
 bad_modifier:
-	Parse_Error(PARSE_FATAL, "Invalid modifier \":[%s]\"", arg.str);
 	FStr_Done(&arg);
-	return AMR_CLEANUP;
+	return AMR_BAD;
 }
 
 #if __STDC_VERSION__ >= 199901L || defined(HAVE_LONG_LONG_INT)
@@ -3444,17 +3445,17 @@ ApplyModifier_Order(const char **pp, ModChain *ch)
 		else if (mod[1] == 'x')
 			cmp = NULL;
 		else
-			return AMR_UNKNOWN;
+			goto bad;
 		*pp += 2;
 	} else if (IsDelimiter(mod[3], ch)) {
 		if ((mod[1] == 'n' && mod[2] == 'r') ||
 		    (mod[1] == 'r' && mod[2] == 'n'))
 			cmp = SubNumDesc;
 		else
-			return AMR_UNKNOWN;
+			goto bad;
 		*pp += 3;
 	} else
-		return AMR_UNKNOWN;
+		goto bad;
 
 	if (!ModChain_ShouldEval(ch))
 		return AMR_OK;
@@ -3469,6 +3470,10 @@ ApplyModifier_Order(const char **pp, ModChain *ch)
 	Expr_SetValueOwn(ch->expr, SubstringWords_JoinFree(words));
 
 	return AMR_OK;
+
+bad:
+	(*pp)++;
+	return AMR_BAD;
 }
 
 /* :? then : else */
@@ -3573,15 +3578,8 @@ ApplyModifier_Assign(const char **pp, ModChain *ch)
 
 found_op:
 	if (expr->name[0] == '\0') {
-		const char *value = op[0] == '=' ? op + 1 : op + 2;
 		*pp = mod + 1;
-		/* Take a guess at where the modifier ends. */
-		Parse_Error(PARSE_FATAL,
-		    "Invalid attempt to assign \"%.*s\" to variable \"\" "
-		    "via modifier \"::%.*s\"",
-		    (int)strcspn(value, ":)}"), value,
-		    (int)(value - op), op);
-		return AMR_CLEANUP;
+		return AMR_BAD;
 	}
 
 	*pp = mod + (op[0] != '=' ? 3 : 2);
@@ -3717,17 +3715,17 @@ IsSysVModifier(const char *p, char startc, char endc)
 	bool eqFound = false;
 
 	int depth = 1;
-	while (*p != '\0') {
+	while (*p != '\0' && depth > 0) {
 		if (*p == '=')	/* XXX: should also test depth == 1 */
 			eqFound = true;
-		else if (*p == endc) {
-			if (--depth == 0)
-				break;
-		} else if (*p == startc)
+		else if (*p == endc)
+			depth--;
+		else if (*p == startc)
 			depth++;
-		p++;
+		if (depth > 0)
+			p++;
 	}
-	return eqFound;
+	return *p == endc && eqFound;
 }
 
 /* :from=to */
@@ -3853,15 +3851,18 @@ LogAfterApply(const ModChain *ch, const char *p, const char *mod)
 {
 	const Expr *expr = ch->expr;
 	const char *value = Expr_Str(expr);
+	const char *quot = value == var_Error ? "" : "\"";
 
 	if (ShouldLogInSimpleFormat(expr)) {
-		debug_printf("Result of ${%s:%.*s} is \"%s\"\n",
-		    expr->name, (int)(p - mod), mod, value);
+		debug_printf("Result of ${%s:%.*s} is %s%s%s\n",
+		    expr->name, (int)(p - mod), mod,
+		    quot, value == var_Error ? "error" : value, quot);
 		return;
 	}
 
-	debug_printf("Result of ${%s:%.*s} is \"%s\" (%s, %s)\n",
-	    expr->name, (int)(p - mod), mod, value,
+	debug_printf("Result of ${%s:%.*s} is %s%s%s (%s, %s)\n",
+	    expr->name, (int)(p - mod), mod,
+	    quot, value == var_Error ? "error" : value, quot,
 	    VarEvalMode_Name[expr->emode],
 	    ExprDefined_Name[expr->defined]);
 }
@@ -3973,9 +3974,7 @@ ApplyModifiersIndirect(ModChain *ch, const char **pp)
 
 	if (ModChain_ShouldEval(ch) && mods.str[0] != '\0') {
 		const char *modsp = mods.str;
-		EvalStack_Push(VSK_INDIRECT_MODIFIERS, mods.str, NULL);
 		ApplyModifiers(expr, &modsp, '\0', '\0');
-		EvalStack_Pop();
 		if (Expr_Str(expr) == var_Error || *modsp != '\0') {
 			FStr_Done(&mods);
 			*pp = p;
@@ -4009,14 +4008,9 @@ ApplySingleModifier(const char **pp, ModChain *ch)
 	if (DEBUG(VAR))
 		LogBeforeApply(ch, mod);
 
-	if (posix_state == PS_SET)
-		res = ApplyModifier_SysV(&p, ch);
-	else
-		res = AMR_UNKNOWN;
-	if (res == AMR_UNKNOWN)
-		res = ApplyModifier(&p, ch);
+	res = ApplyModifier(&p, ch);
 
-	if (res == AMR_UNKNOWN && posix_state != PS_SET) {
+	if (res == AMR_UNKNOWN) {
 		assert(p == mod);
 		res = ApplyModifier_SysV(&p, ch);
 	}
@@ -4030,12 +4024,11 @@ ApplySingleModifier(const char **pp, ModChain *ch)
 		 */
 		for (p++; !IsDelimiter(*p, ch); p++)
 			continue;
-		Parse_Error(PARSE_FATAL, "Unknown modifier \":%.*s\"",
+		Parse_Error(PARSE_FATAL, "Unknown modifier \"%.*s\"",
 		    (int)(p - mod), mod);
 		Expr_SetValueRefer(ch->expr, var_Error);
-		res = AMR_CLEANUP;
 	}
-	if (res != AMR_OK) {
+	if (res == AMR_CLEANUP || res == AMR_BAD) {
 		*pp = p;
 		return res;
 	}
@@ -4091,6 +4084,7 @@ ApplyModifiers(
 {
 	ModChain ch = ModChain_Init(expr, startc, endc, ' ', false);
 	const char *p;
+	const char *mod;
 
 	assert(startc == '(' || startc == '{' || startc == '\0');
 	assert(endc == ')' || endc == '}' || endc == '\0');
@@ -4121,14 +4115,23 @@ ApplyModifiers(
 				break;
 		}
 
+		mod = p;
+
 		res = ApplySingleModifier(&p, &ch);
 		if (res == AMR_CLEANUP)
 			goto cleanup;
+		if (res == AMR_BAD)
+			goto bad_modifier;
 	}
 
 	*pp = p;
 	assert(Expr_Str(expr) != NULL);	/* Use var_Error or varUndefined. */
 	return;
+
+bad_modifier:
+	/* Take a guess at where the modifier ends. */
+	Parse_Error(PARSE_FATAL, "Bad modifier \":%.*s\"",
+	    (int)strcspn(mod, ":)}"), mod);
 
 cleanup:
 	/*
@@ -4338,18 +4341,16 @@ FindLocalLegacyVar(Substring varname, GNode *scope,
 
 static FStr
 EvalUndefined(bool dynamic, const char *start, const char *p,
-	      Substring varname, VarEvalMode emode, int parseErrorsBefore)
+	      Substring varname, VarEvalMode emode)
 {
 	if (dynamic)
 		return FStr_InitOwn(bmake_strsedup(start, p));
 
 	if (emode == VARE_EVAL_DEFINED_LOUD
 	    || (emode == VARE_EVAL_DEFINED && opts.strict)) {
-		if (parseErrors == parseErrorsBefore) {
-			Parse_Error(PARSE_FATAL,
-			    "Variable \"%.*s\" is undefined",
-			    (int) Substring_Length(varname), varname.start);
-		}
+		Parse_Error(PARSE_FATAL,
+		    "Variable \"%.*s\" is undefined",
+		    (int)Substring_Length(varname), varname.start);
 		return FStr_InitRefer(var_Error);
 	}
 
@@ -4371,7 +4372,6 @@ ParseVarnameLong(
 	GNode *scope,
 	VarEvalMode emode,
 	VarEvalMode nested_emode,
-	int parseErrorsBefore,
 
 	const char **out_false_pp,
 	FStr *out_false_val,
@@ -4438,7 +4438,7 @@ ParseVarnameLong(
 			p++;	/* skip endc */
 			*out_false_pp = p;
 			*out_false_val = EvalUndefined(dynamic, start, p,
-			    name, emode, parseErrorsBefore);
+			    name, emode);
 			LazyBuf_Done(&varname);
 			return false;
 		}
@@ -4570,7 +4570,6 @@ Var_Parse(const char **pp, GNode *scope, VarEvalMode emode)
 		? VARE_EVAL : emode,
 	    scope, DEF_REGULAR);
 	FStr val;
-	int parseErrorsBefore = parseErrors;
 
 	if (Var_Parse_U(pp, emode, &val))
 		return val;
@@ -4593,7 +4592,6 @@ Var_Parse(const char **pp, GNode *scope, VarEvalMode emode)
 		p++;
 	} else {
 		if (!ParseVarnameLong(&p, startc, scope, emode, expr.emode,
-		    parseErrorsBefore,
 		    pp, &val,
 		    &endc, &v, &haveModifier, &extramodifiers,
 		    &dynamic, &expr.defined))
@@ -4668,10 +4666,14 @@ Var_Parse(const char **pp, GNode *scope, VarEvalMode emode)
 	*pp = p;
 
 	if (expr.defined == DEF_UNDEF) {
-		Substring varname = Substring_InitStr(expr.name);
-		FStr value = EvalUndefined(dynamic, start, p, varname, emode,
-		    parseErrorsBefore);
-		Expr_SetValue(&expr, value);
+		if (dynamic)
+			Expr_SetValueOwn(&expr, bmake_strsedup(start, p));
+		else {
+			Expr_SetValueRefer(&expr,
+			    emode == VARE_EVAL_DEFINED
+			    || emode == VARE_EVAL_DEFINED_LOUD
+				? var_Error : varUndefined);
+		}
 	}
 
 	if (v->shortLived) {
@@ -4780,9 +4782,7 @@ Var_SubstInTarget(const char *str, GNode *scope)
 {
 	char *res;
 	EvalStack_Push(VSK_TARGET, scope->name, NULL);
-	EvalStack_Push(VSK_COMMAND, str, NULL);
 	res = Var_Subst(str, scope, VARE_EVAL);
-	EvalStack_Pop();
 	EvalStack_Pop();
 	return res;
 }

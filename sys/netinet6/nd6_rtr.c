@@ -553,8 +553,12 @@ nd6_ra_input(struct mbuf *m, int off, int icmp6len)
 		maxmtu = (ndi->maxmtu && ndi->maxmtu < ifp->if_mtu)
 		    ? ndi->maxmtu : ifp->if_mtu;
 		if (mtu <= maxmtu) {
-			if (ndi->linkmtu != mtu) {
-				ndi->linkmtu = mtu;
+			int change = (ndi->linkmtu != mtu);
+
+			ndi->linkmtu = mtu;
+			if (change) {
+				/* in6_maxmtu may change */
+				in6_setmaxmtu();
 				rt_updatemtu(ifp);
 			}
 		} else {

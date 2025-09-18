@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.641 2025/03/31 14:35:22 riastradh Exp $	*/
+/*	$NetBSD: main.c,v 1.639 2025/03/07 06:50:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -108,7 +108,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.641 2025/03/31 14:35:22 riastradh Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.639 2025/03/07 06:50:34 rillig Exp $");
 #if defined(MAKE_NATIVE)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -2136,17 +2136,12 @@ PrintOnError(GNode *gn, const char *msg)
 		SetErrorVars(gn);
 
 	{
-		char *errorVarsValues;
-		enum PosixState p_s = posix_state;
-
-		posix_state = PS_TOO_LATE;
-		errorVarsValues = Var_Subst(
+		char *errorVarsValues = Var_Subst(
 		    "${MAKE_PRINT_VAR_ON_ERROR:@v@$v='${$v}'\n@}",
 		    SCOPE_GLOBAL, VARE_EVAL);
 		/* TODO: handle errors */
 		printf("%s", errorVarsValues);
 		free(errorVarsValues);
-		posix_state = p_s;
 	}
 
 	fflush(stdout);
@@ -2165,15 +2160,12 @@ void
 Main_ExportMAKEFLAGS(bool first)
 {
 	static bool once = true;
-	enum PosixState p_s;
 	char *flags;
 
 	if (once != first)
 		return;
 	once = false;
 
-	p_s = posix_state;
-	posix_state = PS_TOO_LATE;
 	flags = Var_Subst(
 	    "${.MAKEFLAGS} ${.MAKEOVERRIDES:O:u:@v@$v=${$v:Q}@}",
 	    SCOPE_CMDLINE, VARE_EVAL);
@@ -2181,7 +2173,6 @@ Main_ExportMAKEFLAGS(bool first)
 	if (flags[0] != '\0')
 		setenv("MAKEFLAGS", flags, 1);
 	free(flags);
-	posix_state = p_s;
 }
 
 char *

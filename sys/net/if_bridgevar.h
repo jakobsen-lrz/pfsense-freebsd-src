@@ -74,9 +74,6 @@
  * Data structure and control definitions for bridge interfaces.
  */
 
-#ifndef	_NET_IF_BRIDGEVAR_H_
-#define	_NET_IF_BRIDGEVAR_H_
-
 #include <sys/types.h>
 #include <sys/callout.h>
 #include <sys/queue.h>
@@ -188,7 +185,7 @@ struct ifbareq {
 	unsigned long	ifba_expire;		/* address expire time */
 	uint8_t		ifba_flags;		/* address flags */
 	uint8_t		ifba_dst[ETHER_ADDR_LEN];/* destination address */
-	ether_vlanid_t	ifba_vlan;		/* vlan id */
+	uint16_t	ifba_vlan;		/* vlan id */
 };
 
 #define	IFBAF_TYPEMASK	0x03	/* address type mask */
@@ -325,8 +322,5 @@ struct ifbpstpconf {
 extern	void (*bridge_dn_p)(struct mbuf *, struct ifnet *);
 extern	bool (*bridge_same_p)(const void *, const void *);
 extern	void *(*bridge_get_softc_p)(struct ifnet *);
-extern	bool (*bridge_member_ifaddrs_p)(void);
 
 #endif /* _KERNEL */
-
-#endif /* _NET_IF_BRIDGEVAR_H_ */

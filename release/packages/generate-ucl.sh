@@ -43,10 +43,6 @@ main() {
 		periodic)
 			pkgdeps="cron"
 			;;
-		rcmds)
-			# the RPC daemons require rpcbind
-			pkgdeps="utilities"
-			;;
 
 		# -dev packages that have no corresponding non-dev package
 		# as a dependency.
@@ -112,7 +108,7 @@ main() {
 
 	uclsource="${srctree}/release/packages/template.ucl"
 
-	if [ -n "${debug}" ]; then
+	if [ ! -z "${debug}" ]; then
 		echo ""
 		echo "==============================================================="
 		echo "DEBUG:"
@@ -132,11 +128,11 @@ main() {
 	fi
 
 	[ -z "${comment}" ] && comment="${outname} package"
-	[ -n "${_descr}" ] && comment="${comment} (${_descr})"
+	[ ! -z "${_descr}" ] && comment="${comment} (${_descr})"
 	[ -z "${desc}" ] && desc="${outname} package"
 
 	cp "${uclsource}" "${uclfile}"
-	if [ -n "${pkgdeps}" ]; then
+	if [ ! -z "${pkgdeps}" ]; then
 		echo 'deps: {' >> ${uclfile}
 		for dep in ${pkgdeps}; do
 			cat <<EOF >> ${uclfile}

@@ -32,8 +32,6 @@
 #ifndef _NETINET_IN_SYSTM_H_
 #define _NETINET_IN_SYSTM_H_
 
-#include <sys/types.h>
-
 /*
  * Miscellaneous internetwork
  * definitions for kernel.

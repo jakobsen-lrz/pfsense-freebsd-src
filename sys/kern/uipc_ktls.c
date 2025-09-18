@@ -1332,11 +1332,7 @@ ktls_enable_rx(struct socket *so, struct tls_enable *en)
 
 	/* Mark the socket as using TLS offload. */
 	SOCK_RECVBUF_LOCK(so);
-	if (__predict_false(so->so_rcv.sb_tls_info != NULL))
-		error = EALREADY;
-	else if ((so->so_rcv.sb_flags & SB_SPLICED) != 0)
-		error = EINVAL;
-	if (error != 0) {
+	if (__predict_false(so->so_rcv.sb_tls_info != NULL)) {
 		SOCK_RECVBUF_UNLOCK(so);
 		SOCK_IO_RECV_UNLOCK(so);
 		ktls_free(tls);
@@ -1436,16 +1432,12 @@ ktls_enable_tx(struct socket *so, struct tls_enable *en)
 	inp = so->so_pcb;
 	INP_WLOCK(inp);
 	SOCK_SENDBUF_LOCK(so);
-	if (__predict_false(so->so_snd.sb_tls_info != NULL))
-		error = EALREADY;
-	else if ((so->so_snd.sb_flags & SB_SPLICED) != 0)
-		error = EINVAL;
-	if (error != 0) {
+	if (__predict_false(so->so_snd.sb_tls_info != NULL)) {
 		SOCK_SENDBUF_UNLOCK(so);
 		INP_WUNLOCK(inp);
 		SOCK_IO_SEND_UNLOCK(so);
 		ktls_free(tls);
-		return (error);
+		return (EALREADY);
 	}
 	so->so_snd.sb_tls_seqno = be64dec(en->rec_seq);
 	so->so_snd.sb_tls_info = tls;

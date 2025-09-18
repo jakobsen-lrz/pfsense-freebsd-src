@@ -106,7 +106,7 @@ typedef enum {
 struct libusb_context {
 	int	debug;
 	int	debug_fixed;
-	int	event;
+	int	ctrl_pipe[2];
 	int	tr_done_ref;
 	int	tr_done_gen;
 	usb_event_mode_t usb_event_mode;
