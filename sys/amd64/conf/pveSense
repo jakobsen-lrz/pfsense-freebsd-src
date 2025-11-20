@@ -87,5 +87,6 @@ nodevice        sbp
 device          virtio_console
 device          vte
 device          speaker
+device          ichwd
 nooptions       USB_DEBUG
 device          uhid
